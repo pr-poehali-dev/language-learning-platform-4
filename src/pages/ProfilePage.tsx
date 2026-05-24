@@ -42,12 +42,7 @@ export default function ProfilePage({ user }: { user: User }) {
     <div className="max-w-5xl mx-auto space-y-5">
       {/* Profile header */}
       <div className="bg-card rounded-xl border border-border overflow-hidden">
-        <div className="h-24 red-accent relative">
-          <div className="absolute inset-0 pointer-events-none overflow-hidden opacity-10">
-            <div className="absolute -top-4 -right-4 w-32 h-32 rounded-full bg-white/20 blur-2xl" />
-            <div className="absolute bottom-0 left-1/4 w-24 h-24 rounded-full bg-white/10 blur-xl" />
-          </div>
-        </div>
+        <div className="h-24 red-accent" />
         <div className="px-6 pb-5">
           <div className="flex flex-col sm:flex-row sm:items-end gap-4 -mt-8">
             <div className="w-16 h-16 rounded-2xl red-accent border-4 border-card flex items-center justify-center flex-shrink-0">
