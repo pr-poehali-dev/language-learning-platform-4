@@ -29,6 +29,8 @@ def handler(event: dict, context) -> dict:
 
     if method == "POST" and action == "login":
         return login(event)
+    if method == "POST" and action == "register":
+        return register(event)
     if method == "POST" and action == "logout":
         return logout(event)
     if method == "GET":
@@ -73,6 +75,54 @@ def login(event):
         "body": json.dumps({
             "token": token,
             "user": {"id": user_id, "name": name, "role": role, "level": level, "avatar": avatar}
+        })
+    }
+
+
+def register(event):
+    body = json.loads(event.get("body") or "{}")
+    name = body.get("name", "").strip()
+    email = body.get("email", "").strip().lower()
+    password = body.get("password", "")
+    role = body.get("role", "student")
+    level = body.get("level", "A1")
+
+    if not name or not email or not password:
+        return {"statusCode": 400, "headers": CORS, "body": json.dumps({"error": "Имя, email и пароль обязательны"})}
+    if len(password) < 6:
+        return {"statusCode": 400, "headers": CORS, "body": json.dumps({"error": "Пароль должен быть не менее 6 символов"})}
+    if role not in ("student", "teacher"):
+        role = "student"
+
+    # Генерируем аватар из первых букв имени
+    parts = name.split()
+    avatar = (parts[0][0] + (parts[1][0] if len(parts) > 1 else parts[0][1])).upper()
+
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT id FROM users WHERE email=%s", (email,))
+    if cur.fetchone():
+        cur.close(); conn.close()
+        return {"statusCode": 409, "headers": CORS, "body": json.dumps({"error": "Пользователь с таким email уже существует"})}
+
+    cur.execute(
+        "INSERT INTO users (email, password_hash, name, role, level, avatar) VALUES (%s,%s,%s,%s,%s,%s) RETURNING id",
+        (email, password, name, role, level if role == "student" else None, avatar)
+    )
+    user_id = cur.fetchone()[0]
+
+    token = secrets.token_hex(32)
+    expires = datetime.now() + timedelta(days=30)
+    cur.execute("INSERT INTO sessions (user_id, token, expires_at) VALUES (%s,%s,%s)", (user_id, token, expires))
+    conn.commit()
+    cur.close(); conn.close()
+
+    return {
+        "statusCode": 200,
+        "headers": CORS,
+        "body": json.dumps({
+            "token": token,
+            "user": {"id": user_id, "name": name, "role": role, "level": level if role == "student" else None, "avatar": avatar}
         })
     }
 

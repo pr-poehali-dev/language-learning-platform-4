@@ -1,6 +1,6 @@
 import { useState } from "react";
 import Icon from "@/components/ui/icon";
-import { apiLogin } from "@/lib/api";
+import { apiLogin, apiRegister } from "@/lib/api";
 
 export type UserRole = "student" | "teacher";
 
@@ -21,14 +21,34 @@ const DEMO = {
   teacher: { email: "elena@hispania35.ru", password: "teacher123" },
 };
 
+const LEVELS = ["A1", "A2", "B1", "B2", "C1", "C2"];
+
 export default function LoginPage({ onLogin }: LoginPageProps) {
+  const [mode, setMode] = useState<"login" | "register">("login");
+
+  // Login state
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+
+  // Register state
+  const [regName, setRegName] = useState("");
+  const [regEmail, setRegEmail] = useState("");
+  const [regPassword, setRegPassword] = useState("");
+  const [regPassword2, setRegPassword2] = useState("");
+  const [regRole, setRegRole] = useState<UserRole>("student");
+  const [regLevel, setRegLevel] = useState("A1");
+  const [showRegPassword, setShowRegPassword] = useState(false);
+
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const switchMode = (m: "login" | "register") => {
+    setMode(m);
+    setError("");
+  };
+
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setLoading(true);
@@ -36,6 +56,33 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
       const res = await apiLogin(email.trim().toLowerCase(), password);
       if (res.error || !res.token || !res.user) {
         setError(res.error || "Неверный email или пароль");
+        setLoading(false);
+        return;
+      }
+      localStorage.setItem("hispania_token", res.token);
+      onLogin({ id: res.user.id, name: res.user.name, role: res.user.role, level: res.user.level, avatar: res.user.avatar });
+    } catch {
+      setError("Ошибка соединения. Попробуйте ещё раз.");
+      setLoading(false);
+    }
+  };
+
+  const handleRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    if (regPassword !== regPassword2) {
+      setError("Пароли не совпадают");
+      return;
+    }
+    if (regPassword.length < 6) {
+      setError("Пароль должен быть не менее 6 символов");
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await apiRegister(regName.trim(), regEmail.trim().toLowerCase(), regPassword, regRole, regLevel);
+      if (res.error || !res.token || !res.user) {
+        setError(res.error || "Ошибка регистрации");
         setLoading(false);
         return;
       }
@@ -115,11 +162,11 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
       </div>
 
       {/* Right — form */}
-      <div className="flex-1 flex items-center justify-center p-6">
-        <div className="w-full max-w-sm animate-fade-in">
+      <div className="flex-1 flex items-center justify-center p-6 overflow-y-auto">
+        <div className="w-full max-w-sm animate-fade-in py-4">
 
           {/* Mobile logo */}
-          <div className="flex items-center gap-3 mb-8 lg:hidden">
+          <div className="flex items-center gap-3 mb-6 lg:hidden">
             <div className="w-9 h-9 rounded-xl red-accent flex items-center justify-center">
               <span className="font-montserrat font-black text-white text-sm">H</span>
             </div>
@@ -129,105 +176,187 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
             </div>
           </div>
 
-          <h2 className="font-montserrat font-black text-foreground text-2xl mb-1">Вход в систему</h2>
-          <p className="text-muted-foreground font-ibm text-sm mb-7">Введите данные для входа в личный кабинет</p>
-
-          {/* Quick demo buttons */}
-          <div className="flex gap-2 mb-6">
+          {/* Tabs */}
+          <div className="flex bg-muted/50 rounded-xl p-1 mb-6">
             <button
-              type="button"
-              onClick={() => fillDemo("student")}
-              className="flex-1 flex items-center justify-center gap-2 py-2 rounded-lg border border-border bg-muted/40 hover:bg-muted text-xs font-montserrat font-medium text-muted-foreground hover:text-foreground transition-colors"
+              onClick={() => switchMode("login")}
+              className={`flex-1 py-2 rounded-lg text-sm font-montserrat font-bold transition-all duration-150 ${
+                mode === "login" ? "bg-card shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
+              }`}
             >
-              <Icon name="GraduationCap" size={14} />
-              Войти как студент
+              Вход
             </button>
             <button
-              type="button"
-              onClick={() => fillDemo("teacher")}
-              className="flex-1 flex items-center justify-center gap-2 py-2 rounded-lg border border-border bg-muted/40 hover:bg-muted text-xs font-montserrat font-medium text-muted-foreground hover:text-foreground transition-colors"
+              onClick={() => switchMode("register")}
+              className={`flex-1 py-2 rounded-lg text-sm font-montserrat font-bold transition-all duration-150 ${
+                mode === "register" ? "bg-card shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
+              }`}
             >
-              <Icon name="BookUser" size={14} />
-              Войти как преподаватель
+              Регистрация
             </button>
           </div>
 
-          <div className="flex items-center gap-3 mb-6">
-            <div className="flex-1 h-px bg-border" />
-            <span className="text-xs text-muted-foreground font-ibm">или введите вручную</span>
-            <div className="flex-1 h-px bg-border" />
-          </div>
+          {/* ── LOGIN ── */}
+          {mode === "login" && (
+            <div className="animate-fade-in">
+              <p className="text-muted-foreground font-ibm text-sm mb-5">Введите данные для входа в личный кабинет</p>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Email */}
-            <div>
-              <label className="block text-xs font-montserrat font-bold text-foreground mb-1.5">Email</label>
-              <div className="relative">
-                <Icon name="Mail" size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => { setEmail(e.target.value); setError(""); }}
-                  placeholder="your@email.ru"
-                  className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-border bg-card text-foreground text-sm font-ibm placeholder:text-muted-foreground outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/10 transition-all"
-                  required
-                />
-              </div>
-            </div>
-
-            {/* Password */}
-            <div>
-              <label className="block text-xs font-montserrat font-bold text-foreground mb-1.5">Пароль</label>
-              <div className="relative">
-                <Icon name="Lock" size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                <input
-                  type={showPassword ? "text" : "password"}
-                  value={password}
-                  onChange={(e) => { setPassword(e.target.value); setError(""); }}
-                  placeholder="••••••••"
-                  className="w-full pl-9 pr-10 py-2.5 rounded-xl border border-border bg-card text-foreground text-sm font-ibm placeholder:text-muted-foreground outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/10 transition-all"
-                  required
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  <Icon name={showPassword ? "EyeOff" : "Eye"} size={16} />
+              {/* Demo buttons */}
+              <div className="flex gap-2 mb-5">
+                <button type="button" onClick={() => fillDemo("student")}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border border-border bg-muted/40 hover:bg-muted text-xs font-montserrat font-medium text-muted-foreground hover:text-foreground transition-colors">
+                  <Icon name="GraduationCap" size={13} />Войти как студент
+                </button>
+                <button type="button" onClick={() => fillDemo("teacher")}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border border-border bg-muted/40 hover:bg-muted text-xs font-montserrat font-medium text-muted-foreground hover:text-foreground transition-colors">
+                  <Icon name="BookUser" size={13} />Войти как препод.
                 </button>
               </div>
-            </div>
 
-            {/* Error */}
-            {error && (
-              <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2.5 animate-scale-in">
-                <Icon name="AlertCircle" size={15} className="text-red-500 flex-shrink-0" />
-                <p className="text-sm text-red-700 font-ibm">{error}</p>
+              <div className="flex items-center gap-3 mb-5">
+                <div className="flex-1 h-px bg-border" />
+                <span className="text-xs text-muted-foreground font-ibm">или введите вручную</span>
+                <div className="flex-1 h-px bg-border" />
               </div>
-            )}
 
-            {/* Submit */}
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full py-3 red-accent text-white rounded-xl font-montserrat font-bold text-sm hover:opacity-90 transition-opacity disabled:opacity-60 flex items-center justify-center gap-2 mt-2"
-            >
-              {loading ? (
-                <>
-                  <Icon name="Loader" size={16} className="animate-spin" />
-                  Вхожу...
-                </>
-              ) : (
-                <>
-                  Войти
-                  <Icon name="ArrowRight" size={16} />
-                </>
-              )}
-            </button>
-          </form>
+              <form onSubmit={handleLogin} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-montserrat font-bold text-foreground mb-1.5">Email</label>
+                  <div className="relative">
+                    <Icon name="Mail" size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                    <input type="email" value={email} onChange={e => { setEmail(e.target.value); setError(""); }}
+                      placeholder="your@email.ru" required
+                      className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-border bg-card text-foreground text-sm font-ibm placeholder:text-muted-foreground outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/10 transition-all" />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-montserrat font-bold text-foreground mb-1.5">Пароль</label>
+                  <div className="relative">
+                    <Icon name="Lock" size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                    <input type={showPassword ? "text" : "password"} value={password}
+                      onChange={e => { setPassword(e.target.value); setError(""); }} placeholder="••••••••" required
+                      className="w-full pl-9 pr-10 py-2.5 rounded-xl border border-border bg-card text-foreground text-sm font-ibm placeholder:text-muted-foreground outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/10 transition-all" />
+                    <button type="button" onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors">
+                      <Icon name={showPassword ? "EyeOff" : "Eye"} size={16} />
+                    </button>
+                  </div>
+                </div>
+                {error && (
+                  <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2.5">
+                    <Icon name="AlertCircle" size={15} className="text-red-500 flex-shrink-0" />
+                    <p className="text-sm text-red-700 font-ibm">{error}</p>
+                  </div>
+                )}
+                <button type="submit" disabled={loading}
+                  className="w-full py-3 red-accent text-white rounded-xl font-montserrat font-bold text-sm hover:opacity-90 transition-opacity disabled:opacity-60 flex items-center justify-center gap-2">
+                  {loading ? <><Icon name="Loader" size={16} className="animate-spin" />Вхожу...</> : <>Войти <Icon name="ArrowRight" size={16} /></>}
+                </button>
+              </form>
+            </div>
+          )}
 
-          <p className="text-center text-xs text-muted-foreground font-ibm mt-6">
-            Проблемы со входом? Напишите преподавателю<br />или на{" "}
+          {/* ── REGISTER ── */}
+          {mode === "register" && (
+            <div className="animate-fade-in">
+              <p className="text-muted-foreground font-ibm text-sm mb-5">Создайте аккаунт для доступа к платформе</p>
+
+              <form onSubmit={handleRegister} className="space-y-3">
+                <div>
+                  <label className="block text-xs font-montserrat font-bold text-foreground mb-1.5">Полное имя</label>
+                  <div className="relative">
+                    <Icon name="User" size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                    <input type="text" value={regName} onChange={e => { setRegName(e.target.value); setError(""); }}
+                      placeholder="Иван Иванов" required
+                      className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-border bg-card text-foreground text-sm font-ibm placeholder:text-muted-foreground outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/10 transition-all" />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-montserrat font-bold text-foreground mb-1.5">Email</label>
+                  <div className="relative">
+                    <Icon name="Mail" size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                    <input type="email" value={regEmail} onChange={e => { setRegEmail(e.target.value); setError(""); }}
+                      placeholder="your@email.ru" required
+                      className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-border bg-card text-foreground text-sm font-ibm placeholder:text-muted-foreground outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/10 transition-all" />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-montserrat font-bold text-foreground mb-1.5">Пароль</label>
+                  <div className="relative">
+                    <Icon name="Lock" size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                    <input type={showRegPassword ? "text" : "password"} value={regPassword}
+                      onChange={e => { setRegPassword(e.target.value); setError(""); }} placeholder="Не менее 6 символов" required
+                      className="w-full pl-9 pr-10 py-2.5 rounded-xl border border-border bg-card text-foreground text-sm font-ibm placeholder:text-muted-foreground outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/10 transition-all" />
+                    <button type="button" onClick={() => setShowRegPassword(!showRegPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                      <Icon name={showRegPassword ? "EyeOff" : "Eye"} size={16} />
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-montserrat font-bold text-foreground mb-1.5">Повторите пароль</label>
+                  <div className="relative">
+                    <Icon name="Lock" size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                    <input type={showRegPassword ? "text" : "password"} value={regPassword2}
+                      onChange={e => { setRegPassword2(e.target.value); setError(""); }} placeholder="Повторите пароль" required
+                      className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-border bg-card text-foreground text-sm font-ibm placeholder:text-muted-foreground outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/10 transition-all" />
+                  </div>
+                </div>
+
+                {/* Role selector */}
+                <div>
+                  <label className="block text-xs font-montserrat font-bold text-foreground mb-1.5">Роль</label>
+                  <div className="flex gap-2">
+                    <button type="button" onClick={() => setRegRole("student")}
+                      className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl border text-sm font-montserrat font-medium transition-all ${
+                        regRole === "student" ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:border-primary/40"
+                      }`}>
+                      <Icon name="GraduationCap" size={16} />Студент
+                    </button>
+                    <button type="button" onClick={() => setRegRole("teacher")}
+                      className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl border text-sm font-montserrat font-medium transition-all ${
+                        regRole === "teacher" ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:border-primary/40"
+                      }`}>
+                      <Icon name="BookUser" size={16} />Преподаватель
+                    </button>
+                  </div>
+                </div>
+
+                {/* Level (only for student) */}
+                {regRole === "student" && (
+                  <div>
+                    <label className="block text-xs font-montserrat font-bold text-foreground mb-1.5">Уровень языка</label>
+                    <div className="flex gap-2 flex-wrap">
+                      {LEVELS.map(l => (
+                        <button key={l} type="button" onClick={() => setRegLevel(l)}
+                          className={`px-3 py-1.5 rounded-lg text-sm font-montserrat font-bold border transition-all ${
+                            regLevel === l ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:border-primary/40"
+                          }`}>{l}</button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {error && (
+                  <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2.5">
+                    <Icon name="AlertCircle" size={15} className="text-red-500 flex-shrink-0" />
+                    <p className="text-sm text-red-700 font-ibm">{error}</p>
+                  </div>
+                )}
+
+                <button type="submit" disabled={loading}
+                  className="w-full py-3 red-accent text-white rounded-xl font-montserrat font-bold text-sm hover:opacity-90 transition-opacity disabled:opacity-60 flex items-center justify-center gap-2">
+                  {loading ? <><Icon name="Loader" size={16} className="animate-spin" />Регистрирую...</> : <>Зарегистрироваться <Icon name="ArrowRight" size={16} /></>}
+                </button>
+              </form>
+            </div>
+          )}
+
+          <p className="text-center text-xs text-muted-foreground font-ibm mt-5">
+            Вопросы? Напишите нам на{" "}
             <a href="https://hispania35.online" target="_blank" className="text-primary hover:underline">hispania35.online</a>
           </p>
         </div>

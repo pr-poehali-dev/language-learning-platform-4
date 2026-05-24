@@ -32,6 +32,14 @@ export async function apiLogin(email: string, password: string) {
   return r.data as { token?: string; user?: ApiUser; error?: string };
 }
 
+export async function apiRegister(name: string, email: string, password: string, role: string, level?: string) {
+  const r = await request(AUTH_URL, {
+    method: "POST",
+    body: JSON.stringify({ action: "register", name, email, password, role, level }),
+  });
+  return r.data as { token?: string; user?: ApiUser; error?: string };
+}
+
 export async function apiMe() {
   const r = await request(AUTH_URL);
   return r.data as { user?: ApiUser; error?: string };
