@@ -43,10 +43,9 @@ export default function ProfilePage({ user }: { user: User }) {
       {/* Profile header */}
       <div className="bg-card rounded-xl border border-border overflow-hidden">
         <div className="h-24 red-accent relative">
-          <div className="absolute inset-0 opacity-20 overflow-hidden">
-            {[...Array(8)].map((_, i) => (
-              <div key={i} className="absolute text-white/30 font-montserrat font-black text-lg" style={{ left: `${i * 14}%`, top: "20%", transform: "rotate(-15deg)" }}>¡Hola!</div>
-            ))}
+          <div className="absolute inset-0 pointer-events-none overflow-hidden opacity-10">
+            <div className="absolute -top-4 -right-4 w-32 h-32 rounded-full bg-white/20 blur-2xl" />
+            <div className="absolute bottom-0 left-1/4 w-24 h-24 rounded-full bg-white/10 blur-xl" />
           </div>
         </div>
         <div className="px-6 pb-5">
