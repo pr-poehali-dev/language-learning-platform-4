@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { type Page } from "@/App";
 import { type User } from "@/pages/LoginPage";
+import { apiGetNotifications, apiMarkNotificationsRead, type Notification } from "@/lib/api";
 import Icon from "@/components/ui/icon";
 
 const pageTitles: Record<Page, string> = {
@@ -10,13 +11,6 @@ const pageTitles: Record<Page, string> = {
   homework: "Домашние задания",
   profile: "Мой профиль",
 };
-
-const notifications = [
-  { id: 1, text: "Новый урок добавлен: Subjuntivo", time: "5 мин назад", read: false },
-  { id: 2, text: "Домашнее задание проверено", time: "1 час назад", read: false },
-  { id: 3, text: "Завтра занятие в 18:00", time: "3 часа назад", read: true },
-  { id: 4, text: "Новое сообщение от Елены", time: "Вчера", read: true },
-];
 
 interface TopBarProps {
   activePage: Page;
@@ -28,7 +22,34 @@ interface TopBarProps {
 export default function TopBar({ activePage, onMenuClick, user, onLogout }: TopBarProps) {
   const [showNotifications, setShowNotifications] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
-  const unread = notifications.filter(n => !n.read).length;
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [unread, setUnread] = useState(0);
+
+  useEffect(() => {
+    apiGetNotifications().then(res => {
+      if (res.notifications) setNotifications(res.notifications);
+      if (res.unread !== undefined) setUnread(res.unread);
+    });
+  }, []);
+
+  const handleOpenNotifications = () => {
+    setShowNotifications(!showNotifications);
+    setShowUserMenu(false);
+    if (!showNotifications && unread > 0) {
+      apiMarkNotificationsRead().then(() => setUnread(0));
+    }
+  };
+
+  const formatTime = (dateStr: string) => {
+    try {
+      const d = new Date(dateStr);
+      const now = new Date();
+      const diff = Math.floor((now.getTime() - d.getTime()) / 60000);
+      if (diff < 60) return `${diff} мин назад`;
+      if (diff < 1440) return `${Math.floor(diff/60)} ч назад`;
+      return d.toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
+    } catch { return ""; }
+  };
 
   return (
     <header className="h-14 bg-card border-b border-border flex items-center px-4 md:px-6 gap-4 flex-shrink-0 relative">
@@ -54,7 +75,7 @@ export default function TopBar({ activePage, onMenuClick, user, onLogout }: TopB
       {/* Notifications */}
       <div className="relative">
         <button
-          onClick={() => { setShowNotifications(!showNotifications); setShowUserMenu(false); }}
+          onClick={handleOpenNotifications}
           className="relative p-2 rounded-lg hover:bg-muted transition-colors"
         >
           <Icon name="Bell" size={20} className="text-muted-foreground" />
@@ -72,13 +93,15 @@ export default function TopBar({ activePage, onMenuClick, user, onLogout }: TopB
               <span className="text-xs text-primary font-medium cursor-pointer hover:underline">Прочитать все</span>
             </div>
             <div className="divide-y divide-border max-h-72 overflow-y-auto">
-              {notifications.map((n) => (
-                <div key={n.id} className={`px-4 py-3 hover:bg-muted/50 transition-colors cursor-pointer ${!n.read ? "bg-primary/5" : ""}`}>
+              {notifications.length === 0 ? (
+                <div className="px-4 py-6 text-center text-sm text-muted-foreground font-ibm">Нет уведомлений</div>
+              ) : notifications.map((n) => (
+                <div key={n.id} className={`px-4 py-3 hover:bg-muted/50 transition-colors cursor-pointer ${!n.is_read ? "bg-primary/5" : ""}`}>
                   <div className="flex gap-3 items-start">
-                    <div className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${!n.read ? "bg-accent" : "bg-transparent"}`} />
+                    <div className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${!n.is_read ? "bg-accent" : "bg-transparent"}`} />
                     <div className="min-w-0">
                       <p className="text-sm text-foreground font-ibm leading-snug">{n.text}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">{n.time}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">{formatTime(n.created_at)}</p>
                     </div>
                   </div>
                 </div>

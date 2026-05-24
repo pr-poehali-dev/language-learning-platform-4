@@ -1,9 +1,11 @@
 import { useState } from "react";
 import Icon from "@/components/ui/icon";
+import { apiLogin } from "@/lib/api";
 
 export type UserRole = "student" | "teacher";
 
 export interface User {
+  id: number;
   name: string;
   role: UserRole;
   level?: string;
@@ -14,10 +16,10 @@ interface LoginPageProps {
   onLogin: (user: User) => void;
 }
 
-const DEMO_USERS = [
-  { email: "anna@hispania35.ru", password: "student123", name: "Анна Михайлова", role: "student" as UserRole, level: "B1", avatar: "АМ" },
-  { email: "elena@hispania35.ru", password: "teacher123", name: "Елена Смирнова", role: "teacher" as UserRole, avatar: "ЕС" },
-];
+const DEMO = {
+  student: { email: "anna@hispania35.ru", password: "student123" },
+  teacher: { email: "elena@hispania35.ru", password: "teacher123" },
+};
 
 export default function LoginPage({ onLogin }: LoginPageProps) {
   const [email, setEmail] = useState("");
@@ -26,28 +28,28 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setLoading(true);
-
-    setTimeout(() => {
-      const user = DEMO_USERS.find(
-        (u) => u.email === email.trim().toLowerCase() && u.password === password
-      );
-      if (user) {
-        onLogin({ name: user.name, role: user.role, level: user.level, avatar: user.avatar });
-      } else {
-        setError("Неверный email или пароль");
+    try {
+      const res = await apiLogin(email.trim().toLowerCase(), password);
+      if (res.error || !res.token || !res.user) {
+        setError(res.error || "Неверный email или пароль");
         setLoading(false);
+        return;
       }
-    }, 700);
+      localStorage.setItem("hispania_token", res.token);
+      onLogin({ id: res.user.id, name: res.user.name, role: res.user.role, level: res.user.level, avatar: res.user.avatar });
+    } catch {
+      setError("Ошибка соединения. Попробуйте ещё раз.");
+      setLoading(false);
+    }
   };
 
   const fillDemo = (role: UserRole) => {
-    const u = DEMO_USERS.find((u) => u.role === role)!;
-    setEmail(u.email);
-    setPassword(u.password);
+    setEmail(DEMO[role].email);
+    setPassword(DEMO[role].password);
     setError("");
   };
 
