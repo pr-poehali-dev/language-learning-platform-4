@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { type User } from "@/pages/LoginPage";
 import Icon from "@/components/ui/icon";
 
 const profileTabs = ["Профиль", "Статистика", "Рейтинг", "Чат"];
@@ -31,7 +32,7 @@ const achievements = [
   { title: "Разговорник", icon: "💬", earned: false },
 ];
 
-export default function ProfilePage() {
+export default function ProfilePage({ user }: { user: User }) {
   const [activeTab, setActiveTab] = useState("Профиль");
   const [message, setMessage] = useState("");
 
@@ -51,10 +52,10 @@ export default function ProfilePage() {
         <div className="px-6 pb-5">
           <div className="flex flex-col sm:flex-row sm:items-end gap-4 -mt-8">
             <div className="w-16 h-16 rounded-2xl red-accent border-4 border-card flex items-center justify-center flex-shrink-0">
-              <span className="text-white font-montserrat font-black text-xl">АМ</span>
+              <span className="text-white font-montserrat font-black text-xl">{user.avatar}</span>
             </div>
             <div className="flex-1">
-              <h2 className="font-montserrat font-black text-xl text-foreground">Анна Михайлова</h2>
+              <h2 className="font-montserrat font-black text-xl text-foreground">{user.name}</h2>
               <p className="text-muted-foreground text-sm font-ibm">Студент · Испанский язык</p>
             </div>
             <div className="flex items-center gap-3">

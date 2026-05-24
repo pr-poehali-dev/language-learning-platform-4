@@ -1,11 +1,20 @@
 import { type Page } from "@/App";
+import { type User } from "@/pages/LoginPage";
 import Icon from "@/components/ui/icon";
 
-const navItems = [
+const studentNav = [
   { id: "dashboard" as Page, label: "Главная", icon: "LayoutDashboard" },
   { id: "calendar" as Page, label: "Календарь", icon: "CalendarDays" },
   { id: "materials" as Page, label: "Материалы", icon: "BookOpen" },
-  { id: "homework" as Page, label: "Домашние задания", icon: "ClipboardList" },
+  { id: "homework" as Page, label: "Домашние задания", icon: "ClipboardList", badge: 3 },
+  { id: "profile" as Page, label: "Профиль", icon: "UserCircle" },
+];
+
+const teacherNav = [
+  { id: "dashboard" as Page, label: "Главная", icon: "LayoutDashboard" },
+  { id: "calendar" as Page, label: "Расписание", icon: "CalendarDays" },
+  { id: "materials" as Page, label: "Материалы", icon: "BookOpen" },
+  { id: "homework" as Page, label: "Проверка заданий", icon: "ClipboardCheck", badge: 2 },
   { id: "profile" as Page, label: "Профиль", icon: "UserCircle" },
 ];
 
@@ -14,20 +23,19 @@ interface SidebarProps {
   onNavigate: (page: Page) => void;
   isOpen: boolean;
   onClose: () => void;
+  user: User;
 }
 
-export default function Sidebar({ activePage, onNavigate, isOpen, onClose }: SidebarProps) {
+export default function Sidebar({ activePage, onNavigate, isOpen, onClose, user }: SidebarProps) {
+  const navItems = user.role === "teacher" ? teacherNav : studentNav;
+  const isTeacher = user.role === "teacher";
+
   return (
     <>
-      {/* Overlay mobile */}
       {isOpen && (
-        <div
-          className="fixed inset-0 bg-black/60 z-40 md:hidden"
-          onClick={onClose}
-        />
+        <div className="fixed inset-0 bg-black/60 z-40 md:hidden" onClick={onClose} />
       )}
 
-      {/* Sidebar */}
       <aside
         className={`
           fixed md:relative z-50 md:z-auto
@@ -53,13 +61,25 @@ export default function Sidebar({ activePage, onNavigate, isOpen, onClose }: Sid
         <div className="px-4 py-3 mx-3 mt-4 rounded-lg bg-sidebar-accent/50">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-full red-accent flex items-center justify-center flex-shrink-0">
-              <span className="text-white font-montserrat font-bold text-xs">АМ</span>
+              <span className="text-white font-montserrat font-bold text-xs">{user.avatar}</span>
             </div>
             <div className="min-w-0">
-              <p className="text-sidebar-foreground font-medium text-xs truncate">Анна Михайлова</p>
-              <p className="text-sidebar-foreground/50 text-xs">Студент · Уровень B1</p>
+              <p className="text-sidebar-foreground font-medium text-xs truncate">{user.name}</p>
+              <p className="text-sidebar-foreground/50 text-xs">
+                {isTeacher ? "Преподаватель" : `Студент · Уровень ${user.level}`}
+              </p>
             </div>
           </div>
+        </div>
+
+        {/* Role badge */}
+        <div className="mx-4 mt-2">
+          <span className={`inline-flex items-center gap-1.5 text-xs font-montserrat font-bold px-2 py-1 rounded-full ${
+            isTeacher ? "bg-accent/20 text-accent" : "bg-sidebar-primary/30 text-sidebar-foreground/80"
+          }`}>
+            <Icon name={isTeacher ? "BookUser" : "GraduationCap"} size={11} />
+            {isTeacher ? "Режим преподавателя" : "Режим студента"}
+          </span>
         </div>
 
         {/* Nav */}
@@ -81,8 +101,10 @@ export default function Sidebar({ activePage, onNavigate, isOpen, onClose }: Sid
               >
                 <Icon name={item.icon} size={18} className="flex-shrink-0" />
                 <span className="font-ibm">{item.label}</span>
-                {item.id === "homework" && (
-                  <span className="ml-auto bg-accent text-accent-foreground text-xs font-bold px-1.5 py-0.5 rounded-full font-montserrat">3</span>
+                {"badge" in item && item.badge && (
+                  <span className="ml-auto bg-accent text-accent-foreground text-xs font-bold px-1.5 py-0.5 rounded-full font-montserrat">
+                    {item.badge}
+                  </span>
                 )}
               </button>
             );

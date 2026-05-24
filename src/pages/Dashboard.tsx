@@ -1,8 +1,10 @@
 import { type Page } from "@/App";
+import { type User } from "@/pages/LoginPage";
 import Icon from "@/components/ui/icon";
 
 interface DashboardProps {
   onNavigate: (page: Page) => void;
+  user: User;
 }
 
 const stats = [
@@ -44,7 +46,7 @@ const leaderboard = [
   { name: "Иван Т.", score: 75, avatar: "ИТ" },
 ];
 
-export default function Dashboard({ onNavigate }: DashboardProps) {
+export default function Dashboard({ onNavigate, user }: DashboardProps) {
   return (
     <div className="max-w-6xl mx-auto space-y-6">
 
@@ -54,8 +56,10 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
         <div className="absolute bottom-0 left-1/3 w-32 h-32 bg-white/5 rounded-full translate-y-1/2" />
         <div className="relative">
           <p className="text-white/70 text-sm font-ibm mb-1">Добро пожаловать обратно 👋</p>
-          <h2 className="font-montserrat font-black text-2xl mb-1">Анна Михайлова</h2>
-          <p className="text-white/80 font-ibm text-sm">Испанский язык · Уровень B1 · Группа «Среда-Пятница»</p>
+          <h2 className="font-montserrat font-black text-2xl mb-1">{user.name}</h2>
+          <p className="text-white/80 font-ibm text-sm">
+            {user.role === "teacher" ? "Преподаватель · Hispania 35" : `Испанский язык · Уровень ${user.level} · Группа «Среда-Пятница»`}
+          </p>
           <div className="mt-4 flex items-center gap-4">
             <div>
               <p className="text-white/60 text-xs font-ibm">Прогресс курса</p>

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { type User } from "@/pages/LoginPage";
 import Icon from "@/components/ui/icon";
 
 const categories = ["Все", "Грамматика", "Аудио", "Видео", "Упражнения", "Словари"];
@@ -50,7 +51,7 @@ const typeColors: Record<string, string> = {
   DOCX: "bg-green-100 text-green-700",
 };
 
-export default function MaterialsPage() {
+export default function MaterialsPage({ user: _user }: { user: User }) {
   const [activeCategory, setActiveCategory] = useState("Все");
   const [search, setSearch] = useState("");
 

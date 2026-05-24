@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { type User } from "@/pages/LoginPage";
 import Icon from "@/components/ui/icon";
 
 const tabs = ["Все", "Новые", "В процессе", "Проверяется", "Выполнено"];
@@ -56,7 +57,7 @@ const tabMap: Record<string, string | null> = {
   "Выполнено": "done",
 };
 
-export default function HomeworkPage() {
+export default function HomeworkPage({ user: _user }: { user: User }) {
   const [activeTab, setActiveTab] = useState("Все");
   const [expanded, setExpanded] = useState<number | null>(1);
 
