@@ -41,8 +41,8 @@ export default function App() {
             activePage={activePage}
             onMenuClick={() => setSidebarOpen(true)}
           />
-          <main className="flex-1 overflow-y-auto p-4 md:p-6" key={activePage}>
-            <div className="animate-fade-in">
+          <main className="flex-1 overflow-y-auto p-4 md:p-6">
+            <div className="animate-fade-in" key={activePage}>
               {renderPage()}
             </div>
           </main>
