@@ -56,14 +56,19 @@ export default function CalendarPage({ user }: { user: User }) {
   const handleAddLesson = async () => {
     if (!form.topic || !form.lesson_date || !form.lesson_time) return;
     setSaving(true);
-    const res = await apiCreateLesson(form);
-    if (res.ok) {
-      const updated = await apiGetCalendar();
-      if (updated.lessons) setLessons(updated.lessons);
-      setShowAdd(false);
-      setForm({ topic: "", lesson_date: "", lesson_time: "18:00", duration_min: 60, lesson_type: "Грамматика" });
+    try {
+      const res = await apiCreateLesson(form);
+      if (res.ok) {
+        const updated = await apiGetCalendar();
+        if (updated.lessons) setLessons(updated.lessons);
+        setShowAdd(false);
+        setForm({ topic: "", lesson_date: "", lesson_time: "18:00", duration_min: 60, lesson_type: "Грамматика" });
+      }
+    } catch {
+      // сетевая ошибка — просто разблокируем кнопку
+    } finally {
+      setSaving(false);
     }
-    setSaving(false);
   };
 
   return (
