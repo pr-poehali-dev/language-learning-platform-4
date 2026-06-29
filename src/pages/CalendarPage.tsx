@@ -25,10 +25,10 @@ export default function CalendarPage({ user }: { user: User }) {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    apiGetCalendar().then(res => {
-      if (res.lessons) setLessons(res.lessons);
-      setLoading(false);
-    });
+    apiGetCalendar()
+      .then(res => { if (res.lessons) setLessons(res.lessons); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
   }, []);
 
   const firstDay = new Date(current.year, current.month, 1);
