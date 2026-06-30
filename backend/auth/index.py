@@ -188,6 +188,14 @@ def reset_request(event):
         cur.close(); conn.close()
         return {"statusCode": 200, "headers": CORS, "body": json.dumps({"ok": True, "already": True})}
     cur.execute("INSERT INTO password_resets (user_id) VALUES (%s)", (user_id,))
+    cur.execute("SELECT name FROM users WHERE id=%s", (user_id,))
+    student_name = cur.fetchone()[0]
+    cur.execute("SELECT id FROM users WHERE role='teacher'")
+    for (tid,) in cur.fetchall():
+        cur.execute(
+            "INSERT INTO notifications (user_id, text, type) VALUES (%s, %s, 'system')",
+            (tid, f"Студент {student_name} запросил сброс пароля")
+        )
     conn.commit(); cur.close(); conn.close()
     return {"statusCode": 200, "headers": CORS, "body": json.dumps({"ok": True})}
 
