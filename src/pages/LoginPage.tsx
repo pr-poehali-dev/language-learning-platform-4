@@ -1,6 +1,6 @@
 import { useState } from "react";
 import Icon from "@/components/ui/icon";
-import { apiLogin, apiRegister } from "@/lib/api";
+import { apiLogin, apiRegister, apiResetRequest } from "@/lib/api";
 
 export type UserRole = "student" | "teacher";
 
@@ -24,7 +24,7 @@ const DEMO = {
 const LEVELS = ["A1", "A2", "B1", "B2", "C1", "C2"];
 
 export default function LoginPage({ onLogin }: LoginPageProps) {
-  const [mode, setMode] = useState<"login" | "register">("login");
+  const [mode, setMode] = useState<"login" | "register" | "forgot">("login");
 
   // Login state
   const [email, setEmail] = useState("");
@@ -42,10 +42,27 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
 
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [forgotDone, setForgotDone] = useState(false);
 
-  const switchMode = (m: "login" | "register") => {
+  const switchMode = (m: "login" | "register" | "forgot") => {
     setMode(m);
     setError("");
+    setForgotDone(false);
+  };
+
+  const handleForgot = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+    try {
+      const res = await apiResetRequest(forgotEmail.trim().toLowerCase());
+      if (res.error) { setError(res.error); setLoading(false); return; }
+      setForgotDone(true);
+    } catch {
+      setError("Ошибка соединения. Попробуйте ещё раз.");
+    }
+    setLoading(false);
   };
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -177,7 +194,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
           </div>
 
           {/* Tabs */}
-          <div className="flex bg-muted/50 rounded-xl p-1 mb-6">
+          <div className={`flex bg-muted/50 rounded-xl p-1 mb-6 ${mode === "forgot" ? "hidden" : ""}`}>
             <button
               onClick={() => switchMode("login")}
               className={`flex-1 py-2 rounded-lg text-sm font-montserrat font-bold transition-all duration-150 ${
@@ -252,7 +269,57 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
                   className="w-full py-3 red-accent text-white rounded-xl font-montserrat font-bold text-sm hover:opacity-90 transition-opacity disabled:opacity-60 flex items-center justify-center gap-2">
                   {loading ? <><Icon name="Loader" size={16} className="animate-spin" />Вхожу...</> : <>Войти <Icon name="ArrowRight" size={16} /></>}
                 </button>
+                <button type="button" onClick={() => switchMode("forgot")}
+                  className="w-full text-center text-xs text-muted-foreground hover:text-foreground font-ibm transition-colors pt-1">
+                  Забыл пароль?
+                </button>
               </form>
+            </div>
+          )}
+
+          {/* ── FORGOT ── */}
+          {mode === "forgot" && (
+            <div className="animate-fade-in">
+              <button onClick={() => switchMode("login")} className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground font-ibm mb-5 transition-colors">
+                <Icon name="ArrowLeft" size={14} />Вернуться ко входу
+              </button>
+              {forgotDone ? (
+                <div className="text-center space-y-4 py-4">
+                  <div className="w-14 h-14 rounded-full bg-green-100 flex items-center justify-center mx-auto">
+                    <Icon name="CheckCircle" size={28} className="text-green-600" />
+                  </div>
+                  <p className="font-montserrat font-bold text-foreground">Заявка отправлена</p>
+                  <p className="text-sm text-muted-foreground font-ibm">Преподаватель получит уведомление и свяжется с вами для смены пароля.</p>
+                  <button onClick={() => switchMode("login")} className="w-full py-2.5 red-accent text-white rounded-xl font-montserrat font-bold text-sm hover:opacity-90 transition-opacity">
+                    Понятно
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <p className="text-muted-foreground font-ibm text-sm mb-5">Укажите email — преподаватель получит заявку и сбросит пароль вручную.</p>
+                  <form onSubmit={handleForgot} className="space-y-4">
+                    <div>
+                      <label className="block text-xs font-montserrat font-bold text-foreground mb-1.5">Ваш email</label>
+                      <div className="relative">
+                        <Icon name="Mail" size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                        <input type="email" value={forgotEmail} onChange={e => { setForgotEmail(e.target.value); setError(""); }}
+                          placeholder="your@email.ru" required
+                          className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-border bg-card text-foreground text-sm font-ibm placeholder:text-muted-foreground outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/10 transition-all" />
+                      </div>
+                    </div>
+                    {error && (
+                      <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2.5">
+                        <Icon name="AlertCircle" size={15} className="text-red-500 flex-shrink-0" />
+                        <p className="text-sm text-red-700 font-ibm">{error}</p>
+                      </div>
+                    )}
+                    <button type="submit" disabled={loading}
+                      className="w-full py-3 red-accent text-white rounded-xl font-montserrat font-bold text-sm hover:opacity-90 transition-opacity disabled:opacity-60 flex items-center justify-center gap-2">
+                      {loading ? <><Icon name="Loader" size={16} className="animate-spin" />Отправляю...</> : <>Отправить заявку</>}
+                    </button>
+                  </form>
+                </>
+              )}
             </div>
           )}
 

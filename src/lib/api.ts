@@ -50,6 +50,21 @@ export async function apiLogout() {
   localStorage.removeItem("hispania_token");
 }
 
+export async function apiResetRequest(email: string) {
+  const r = await request(AUTH_URL, { method: "POST", body: JSON.stringify({ action: "reset_request", email }) });
+  return r.data as { ok?: boolean; already?: boolean; error?: string };
+}
+
+export async function apiResetList() {
+  const r = await request(AUTH_URL + "?p=reset_list");
+  return r.data as { resets?: PasswordReset[]; error?: string };
+}
+
+export async function apiResetDo(reset_id: number, user_id: number, new_password: string) {
+  const r = await request(AUTH_URL, { method: "POST", body: JSON.stringify({ action: "reset_do", reset_id, user_id, new_password }) });
+  return r.data as { ok?: boolean; error?: string };
+}
+
 // ── Homework ──────────────────────────────────────────────────────────────────
 
 export async function apiGetHomework() {
@@ -228,6 +243,15 @@ export interface Notification {
   text: string;
   type: string;
   is_read: boolean;
+  created_at: string;
+}
+
+export interface PasswordReset {
+  id: number;
+  user_id: number;
+  name: string;
+  email: string;
+  status: string;
   created_at: string;
 }
 

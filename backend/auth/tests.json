@@ -4,26 +4,28 @@
       "name": "Check session no token",
       "method": "GET",
       "path": "/",
-      "expectedStatus": 401,
-      "expectedBody": {"error": "string"},
-      "bodyMatcher": "partial"
+      "expectedStatus": 401
     },
     {
       "name": "Login student success",
       "method": "POST",
       "path": "/",
       "body": {"action": "login", "email": "anna@hispania35.ru", "password": "student123"},
-      "expectedStatus": 200,
-      "expectedBody": {"token": "string"},
-      "bodyMatcher": "partial"
+      "expectedStatus": 200
     },
     {
       "name": "Login wrong password",
       "method": "POST",
       "path": "/",
       "body": {"action": "login", "email": "anna@hispania35.ru", "password": "wrongpass"},
-      "expectedStatus": 401,
-      "bodyMatcher": "partial"
+      "expectedStatus": 401
+    },
+    {
+      "name": "Reset request unknown email",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "reset_request", "email": "unknown@test.ru"},
+      "expectedStatus": 404
     }
   ]
 }

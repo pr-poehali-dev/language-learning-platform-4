@@ -1,7 +1,10 @@
 """
-Авторизация: вход, выход, проверка сессии.
+Авторизация: вход, выход, проверка сессии, сброс пароля.
 POST /login — вход по email+password, возвращает токен
 POST /logout — выход (инвалидация токена)
+POST /reset_request — заявка на сброс пароля (студент)
+POST /reset_do — сброс пароля преподавателем
+GET  /reset_list — список заявок (преподаватель)
 GET  / — проверка токена, возвращает данные пользователя
 """
 import json
@@ -33,7 +36,14 @@ def handler(event: dict, context) -> dict:
         return register(event)
     if method == "POST" and action == "logout":
         return logout(event)
+    if method == "POST" and action == "reset_request":
+        return reset_request(event)
+    if method == "POST" and action == "reset_do":
+        return reset_do(event)
     if method == "GET":
+        params = event.get("queryStringParameters") or {}
+        if params.get("p") == "reset_list":
+            return reset_list(event)
         return me(event)
 
     return {"statusCode": 404, "headers": CORS, "body": json.dumps({"error": "Not found"})}
@@ -137,6 +147,85 @@ def logout(event):
         cur.execute("UPDATE sessions SET expires_at=NOW() WHERE token=%s", (token,))
         conn.commit()
         cur.close(); conn.close()
+    return {"statusCode": 200, "headers": CORS, "body": json.dumps({"ok": True})}
+
+
+def get_authed_user(event):
+    token = event.get("headers", {}).get("X-Auth-Token", "")
+    if not token:
+        return None, None
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT u.id, u.role FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token=%s AND s.expires_at > NOW()",
+        (token,)
+    )
+    row = cur.fetchone()
+    cur.close(); conn.close()
+    if not row:
+        return None, None
+    return row[0], row[1]
+
+
+def reset_request(event):
+    body = json.loads(event.get("body") or "{}")
+    email = body.get("email", "").strip().lower()
+    if not email:
+        return {"statusCode": 400, "headers": CORS, "body": json.dumps({"error": "Укажите email"})}
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT id FROM users WHERE email=%s", (email,))
+    row = cur.fetchone()
+    if not row:
+        cur.close(); conn.close()
+        return {"statusCode": 404, "headers": CORS, "body": json.dumps({"error": "Пользователь не найден"})}
+    user_id = row[0]
+    cur.execute(
+        "SELECT id FROM password_resets WHERE user_id=%s AND status='pending'",
+        (user_id,)
+    )
+    if cur.fetchone():
+        cur.close(); conn.close()
+        return {"statusCode": 200, "headers": CORS, "body": json.dumps({"ok": True, "already": True})}
+    cur.execute("INSERT INTO password_resets (user_id) VALUES (%s)", (user_id,))
+    conn.commit(); cur.close(); conn.close()
+    return {"statusCode": 200, "headers": CORS, "body": json.dumps({"ok": True})}
+
+
+def reset_list(event):
+    user_id, role = get_authed_user(event)
+    if not user_id or role != "teacher":
+        return {"statusCode": 403, "headers": CORS, "body": json.dumps({"error": "Нет доступа"})}
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute(
+        """SELECT r.id, u.id as user_id, u.name, u.email, r.status, r.created_at
+           FROM password_resets r JOIN users u ON u.id=r.user_id
+           WHERE r.status='pending' ORDER BY r.created_at DESC"""
+    )
+    rows = cur.fetchall()
+    cur.close(); conn.close()
+    resets = [{"id": r[0], "user_id": r[1], "name": r[2], "email": r[3], "status": r[4], "created_at": r[5].isoformat()} for r in rows]
+    return {"statusCode": 200, "headers": CORS, "body": json.dumps({"resets": resets})}
+
+
+def reset_do(event):
+    user_id, role = get_authed_user(event)
+    if not user_id or role != "teacher":
+        return {"statusCode": 403, "headers": CORS, "body": json.dumps({"error": "Нет доступа"})}
+    body = json.loads(event.get("body") or "{}")
+    reset_id = body.get("reset_id")
+    target_user_id = body.get("user_id")
+    new_password = body.get("new_password", "").strip()
+    if not reset_id or not target_user_id or not new_password:
+        return {"statusCode": 400, "headers": CORS, "body": json.dumps({"error": "Укажите reset_id, user_id и new_password"})}
+    if len(new_password) < 6:
+        return {"statusCode": 400, "headers": CORS, "body": json.dumps({"error": "Пароль должен быть не менее 6 символов"})}
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("UPDATE users SET password_hash=%s WHERE id=%s", (new_password, target_user_id))
+    cur.execute("UPDATE password_resets SET status='done', resolved_at=NOW() WHERE id=%s", (reset_id,))
+    conn.commit(); cur.close(); conn.close()
     return {"statusCode": 200, "headers": CORS, "body": json.dumps({"ok": True})}
 
 

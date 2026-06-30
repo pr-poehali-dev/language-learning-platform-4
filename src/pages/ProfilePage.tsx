@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { type User } from "@/pages/LoginPage";
 import Icon from "@/components/ui/icon";
+import { apiResetList, apiResetDo, type PasswordReset } from "@/lib/api";
 
 const profileTabs = ["Профиль", "Статистика", "Рейтинг", "Чат"];
 
@@ -33,8 +34,36 @@ const achievements = [
 ];
 
 export default function ProfilePage({ user }: { user: User }) {
+  const tabs = user.role === "teacher" ? [...profileTabs, "Сброс паролей"] : profileTabs;
   const [activeTab, setActiveTab] = useState("Профиль");
   const [message, setMessage] = useState("");
+
+  const [resets, setResets] = useState<PasswordReset[]>([]);
+  const [resetsLoading, setResetsLoading] = useState(false);
+  const [newPasswords, setNewPasswords] = useState<Record<number, string>>({});
+  const [resetMsg, setResetMsg] = useState<Record<number, string>>({});
+
+  useEffect(() => {
+    if (activeTab === "Сброс паролей" && user.role === "teacher") {
+      setResetsLoading(true);
+      apiResetList().then(res => {
+        if (res.resets) setResets(res.resets);
+        setResetsLoading(false);
+      }).catch(() => setResetsLoading(false));
+    }
+  }, [activeTab, user.role]);
+
+  const handleResetDo = async (r: PasswordReset) => {
+    const pwd = newPasswords[r.id] || "";
+    if (pwd.length < 6) { setResetMsg({ ...resetMsg, [r.id]: "Минимум 6 символов" }); return; }
+    const res = await apiResetDo(r.id, r.user_id, pwd);
+    if (res.ok) {
+      setResets(prev => prev.filter(x => x.id !== r.id));
+      setResetMsg({ ...resetMsg, [r.id]: "Пароль изменён!" });
+    } else {
+      setResetMsg({ ...resetMsg, [r.id]: res.error || "Ошибка" });
+    }
+  };
 
   const maxActivity = Math.max(...activityData);
 
@@ -76,8 +105,8 @@ export default function ProfilePage({ user }: { user: User }) {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-2 bg-muted/40 rounded-xl p-1 w-fit">
-        {profileTabs.map(tab => (
+      <div className="flex gap-2 bg-muted/40 rounded-xl p-1 w-fit flex-wrap">
+        {tabs.map(tab => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -302,6 +331,61 @@ export default function ProfilePage({ user }: { user: User }) {
             <button className={`p-2.5 rounded-xl transition-all ${message ? "red-accent text-white" : "bg-muted text-muted-foreground"}`}>
               <Icon name="Send" size={18} />
             </button>
+          </div>
+        </div>
+      )}
+
+      {activeTab === "Сброс паролей" && user.role === "teacher" && (
+        <div className="animate-fade-in space-y-4">
+          <div className="bg-card rounded-xl border border-border overflow-hidden">
+            <div className="px-5 py-4 border-b border-border flex items-center gap-2">
+              <Icon name="KeyRound" size={16} className="text-primary" />
+              <p className="font-montserrat font-bold text-sm text-foreground">Заявки на сброс пароля</p>
+            </div>
+            {resetsLoading ? (
+              <div className="p-8 text-center text-sm text-muted-foreground font-ibm">Загрузка...</div>
+            ) : resets.length === 0 ? (
+              <div className="p-8 text-center">
+                <Icon name="CheckCircle" size={32} className="text-green-500 mx-auto mb-2" />
+                <p className="text-sm text-muted-foreground font-ibm">Нет активных заявок</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-border">
+                {resets.map(r => (
+                  <div key={r.id} className="p-5 space-y-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-xl red-accent flex items-center justify-center flex-shrink-0">
+                        <span className="text-white text-xs font-bold">{r.name.slice(0,2).toUpperCase()}</span>
+                      </div>
+                      <div>
+                        <p className="font-montserrat font-bold text-sm text-foreground">{r.name}</p>
+                        <p className="text-xs text-muted-foreground font-ibm">{r.email}</p>
+                      </div>
+                      <p className="ml-auto text-xs text-muted-foreground font-ibm">
+                        {new Date(r.created_at).toLocaleDateString("ru-RU")}
+                      </p>
+                    </div>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        placeholder="Новый пароль (мин. 6 символов)"
+                        value={newPasswords[r.id] || ""}
+                        onChange={e => setNewPasswords({ ...newPasswords, [r.id]: e.target.value })}
+                        className="flex-1 px-3 py-2 rounded-lg border border-border bg-muted/30 text-sm font-ibm outline-none focus:border-primary/40"
+                      />
+                      <button
+                        onClick={() => handleResetDo(r)}
+                        className="px-4 py-2 red-accent text-white rounded-lg text-sm font-montserrat font-medium hover:opacity-90 transition-opacity">
+                        Сбросить
+                      </button>
+                    </div>
+                    {resetMsg[r.id] && (
+                      <p className="text-xs font-ibm text-green-600">{resetMsg[r.id]}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
