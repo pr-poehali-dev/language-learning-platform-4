@@ -40,19 +40,20 @@ def handler(event: dict, context) -> dict:
     user = get_user(token, conn)
     if not user:
         conn.close()
-        return {"statusCode": 401, "headers": CORS, "body": json.dumps({"error": "Не авторизован"})}
+        return {"statusCode": 401, "headers": CORS, "body": json.dumps({"error": "Не авторизован"}, ensure_ascii=False)}
 
     user_id, user_name, role = user
     method = event.get("httpMethod", "GET")
-    path = event.get("path", "/")
+    params = event.get("queryStringParameters") or {}
+    action = params.get("p", "")
 
-    if method == "GET" and path.endswith("/students"):
+    if method == "GET" and action == "students":
         return get_students(conn)
 
     if method == "GET":
         return get_homework(conn, user_id, role)
 
-    if method == "POST" and path.endswith("/update"):
+    if method == "POST" and action == "update":
         return update_homework(event, conn, user_id, role)
 
     if method == "POST":

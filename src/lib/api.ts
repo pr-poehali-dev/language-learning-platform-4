@@ -63,45 +63,45 @@ export async function apiCreateHomework(data: CreateHomeworkData) {
 }
 
 export async function apiUpdateHomework(data: UpdateHomeworkData) {
-  const r = await request(HOMEWORK_URL + "/update", { method: "POST", body: JSON.stringify(data) });
+  const r = await request(HOMEWORK_URL + "?p=update", { method: "POST", body: JSON.stringify(data) });
   return r.data as { ok?: boolean; error?: string };
 }
 
 export async function apiGetStudents() {
-  const r = await request(HOMEWORK_URL + "/students");
+  const r = await request(HOMEWORK_URL + "?p=students");
   return r.data as { students?: StudentInfo[]; error?: string };
 }
 
 // ── API (materials, calendar, chat, notifications) ────────────────────────────
 
 export async function apiGetMaterials() {
-  const r = await request(API_URL + "/materials");
+  const r = await request(API_URL + "?p=materials");
   return r.data as { materials?: Material[]; error?: string };
 }
 
 export async function apiCreateMaterial(data: CreateMaterialData) {
-  const r = await request(API_URL + "/materials", { method: "POST", body: JSON.stringify(data) });
+  const r = await request(API_URL + "?p=materials", { method: "POST", body: JSON.stringify(data) });
   return r.data as { ok?: boolean; id?: number; error?: string };
 }
 
 export async function apiGetCalendar() {
-  const r = await request(API_URL + "/calendar");
+  const r = await request(API_URL + "?p=calendar");
   return r.data as { lessons?: Lesson[]; error?: string };
 }
 
 export async function apiCreateLesson(data: CreateLessonData) {
-  const r = await request(API_URL + "/calendar", { method: "POST", body: JSON.stringify(data) });
+  const r = await request(API_URL + "?p=calendar", { method: "POST", body: JSON.stringify(data) });
   return r.data as { ok?: boolean; id?: number; error?: string };
 }
 
 export async function apiGetMessages(withUserId?: number) {
-  const url = withUserId ? `${API_URL}/chat/messages?with=${withUserId}` : `${API_URL}/chat/messages`;
+  const url = withUserId ? `${API_URL}?p=chat&with=${withUserId}` : `${API_URL}?p=chat`;
   const r = await request(url);
   return r.data as { messages?: ChatMessage[]; error?: string };
 }
 
 export async function apiSendMessage(toUserId: number, text: string) {
-  const r = await request(API_URL + "/chat/messages", {
+  const r = await request(API_URL + "?p=chat", {
     method: "POST",
     body: JSON.stringify({ to_user_id: toUserId, text }),
   });
@@ -109,16 +109,16 @@ export async function apiSendMessage(toUserId: number, text: string) {
 }
 
 export async function apiGetNotifications() {
-  const r = await request(API_URL + "/notifications");
+  const r = await request(API_URL + "?p=notifications");
   return r.data as { notifications?: Notification[]; unread?: number; error?: string };
 }
 
 export async function apiMarkNotificationsRead() {
-  await request(API_URL + "/notifications/read", { method: "POST", body: "{}" });
+  await request(API_URL + "?p=notifications_read", { method: "POST", body: "{}" });
 }
 
 export async function apiGetLeaderboard() {
-  const r = await request(API_URL + "/leaderboard");
+  const r = await request(API_URL + "?p=leaderboard");
   return r.data as { leaderboard?: LeaderboardEntry[]; error?: string };
 }
 

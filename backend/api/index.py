@@ -17,8 +17,9 @@ import psycopg2
 
 CORS = {
     "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, X-Auth-Token",
+    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, X-Auth-Token, Authorization",
+    "Access-Control-Max-Age": "86400",
 }
 
 def get_conn():
@@ -54,42 +55,43 @@ def handler(event: dict, context) -> dict:
 
     user_id, role, user_name = user
     method = event.get("httpMethod", "GET")
-    path = event.get("path", "/")
+    params = event.get("queryStringParameters") or {}
+    path = params.get("p", "")
 
     try:
         # --- Materials ---
-        if "/materials" in path:
+        if path == "materials":
             if method == "GET":
                 return get_materials(conn)
             if method == "POST":
                 return create_material(event, conn, user_id, role)
 
         # --- Calendar ---
-        if "/calendar" in path:
+        if path == "calendar":
             if method == "GET":
                 return get_lessons(conn, user_id, role)
             if method == "POST":
                 return create_lesson(event, conn, user_id, role)
 
         # --- Chat ---
-        if "/chat/messages" in path:
+        if path == "chat":
             if method == "GET":
                 return get_messages(event, conn, user_id)
             if method == "POST":
                 return send_message(event, conn, user_id, user_name)
 
         # --- Notifications ---
-        if "/notifications/read" in path and method == "POST":
+        if path == "notifications_read" and method == "POST":
             return mark_notifications_read(conn, user_id)
-        if "/notifications" in path and method == "GET":
+        if path == "notifications" and method == "GET":
             return get_notifications(conn, user_id)
 
         # --- Students list ---
-        if "/students" in path and method == "GET":
+        if path == "students" and method == "GET":
             return get_students(conn)
 
         # --- Leaderboard ---
-        if "/leaderboard" in path and method == "GET":
+        if path == "leaderboard" and method == "GET":
             return get_leaderboard(conn)
 
         conn.close()
