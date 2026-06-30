@@ -90,7 +90,15 @@ export default function TopBar({ activePage, onMenuClick, user, onLogout }: TopB
           <div className="absolute right-0 top-12 w-80 bg-card border border-border rounded-xl shadow-xl z-50 overflow-hidden animate-scale-in">
             <div className="flex items-center justify-between px-4 py-3 border-b border-border">
               <span className="font-montserrat font-bold text-sm text-foreground">Уведомления</span>
-              <span className="text-xs text-primary font-medium cursor-pointer hover:underline">Прочитать все</span>
+              <span
+                className="text-xs text-primary font-medium cursor-pointer hover:underline"
+                onClick={() => {
+                  apiMarkNotificationsRead().then(() => {
+                    setUnread(0);
+                    setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+                  });
+                }}
+              >Прочитать все</span>
             </div>
             <div className="divide-y divide-border max-h-72 overflow-y-auto">
               {notifications.length === 0 ? (
