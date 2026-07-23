@@ -87,6 +87,7 @@ export default function App() {
             onMenuClick={() => setSidebarOpen(true)}
             user={user}
             onLogout={handleLogout}
+            onNavigate={setActivePage}
           />
           <main className="flex-1 overflow-y-auto p-4 md:p-6">
             <div className="animate-fade-in" key={activePage}>

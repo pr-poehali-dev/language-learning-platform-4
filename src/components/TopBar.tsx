@@ -17,9 +17,10 @@ interface TopBarProps {
   onMenuClick: () => void;
   user: User;
   onLogout: () => void;
+  onNavigate: (page: Page) => void;
 }
 
-export default function TopBar({ activePage, onMenuClick, user, onLogout }: TopBarProps) {
+export default function TopBar({ activePage, onMenuClick, user, onLogout, onNavigate }: TopBarProps) {
   const [showNotifications, setShowNotifications] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -142,7 +143,10 @@ export default function TopBar({ activePage, onMenuClick, user, onLogout }: TopB
               <p className="text-xs text-muted-foreground font-ibm">{user.role === "teacher" ? "Преподаватель" : `Студент · ${user.level}`}</p>
             </div>
             <div className="py-1">
-              <button className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-foreground hover:bg-muted transition-colors font-ibm">
+              <button
+                onClick={() => { onNavigate("profile"); setShowUserMenu(false); }}
+                className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-foreground hover:bg-muted transition-colors font-ibm"
+              >
                 <Icon name="UserCircle" size={16} className="text-muted-foreground" />
                 Мой профиль
               </button>
