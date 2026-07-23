@@ -65,6 +65,11 @@ export async function apiResetDo(reset_id: number, user_id: number, new_password
   return r.data as { ok?: boolean; error?: string };
 }
 
+export async function apiChangePassword(old_password: string, new_password: string) {
+  const r = await request(AUTH_URL, { method: "POST", body: JSON.stringify({ action: "change_password", old_password, new_password }) });
+  return r.data as { ok?: boolean; error?: string };
+}
+
 // ── Homework ──────────────────────────────────────────────────────────────────
 
 export async function apiGetHomework() {

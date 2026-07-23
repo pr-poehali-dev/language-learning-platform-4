@@ -40,6 +40,8 @@ def handler(event: dict, context) -> dict:
         return reset_request(event)
     if method == "POST" and action == "reset_do":
         return reset_do(event)
+    if method == "POST" and action == "change_password":
+        return change_password(event)
     if method == "GET":
         params = event.get("queryStringParameters") or {}
         if params.get("p") == "reset_list":
@@ -233,6 +235,28 @@ def reset_do(event):
     cur = conn.cursor()
     cur.execute("UPDATE users SET password_hash=%s WHERE id=%s", (new_password, target_user_id))
     cur.execute("UPDATE password_resets SET status='done', resolved_at=NOW() WHERE id=%s", (reset_id,))
+    conn.commit(); cur.close(); conn.close()
+    return {"statusCode": 200, "headers": CORS, "body": json.dumps({"ok": True})}
+
+
+def change_password(event):
+    user_id, _role = get_authed_user(event)
+    if not user_id:
+        return {"statusCode": 401, "headers": CORS, "body": json.dumps({"error": "Не авторизован"})}
+    body = json.loads(event.get("body") or "{}")
+    old_password = body.get("old_password", "")
+    new_password = body.get("new_password", "").strip()
+    if not old_password or not new_password:
+        return {"statusCode": 400, "headers": CORS, "body": json.dumps({"error": "Укажите текущий и новый пароль"})}
+    if len(new_password) < 6:
+        return {"statusCode": 400, "headers": CORS, "body": json.dumps({"error": "Новый пароль должен быть не менее 6 символов"})}
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT id FROM users WHERE id=%s AND password_hash=%s", (user_id, old_password))
+    if not cur.fetchone():
+        cur.close(); conn.close()
+        return {"statusCode": 401, "headers": CORS, "body": json.dumps({"error": "Текущий пароль неверен"})}
+    cur.execute("UPDATE users SET password_hash=%s WHERE id=%s", (new_password, user_id))
     conn.commit(); cur.close(); conn.close()
     return {"statusCode": 200, "headers": CORS, "body": json.dumps({"ok": True})}
 

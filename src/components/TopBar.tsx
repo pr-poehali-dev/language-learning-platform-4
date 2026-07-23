@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { type Page } from "@/App";
 import { type User } from "@/pages/LoginPage";
-import { apiGetNotifications, apiMarkNotificationsRead, type Notification } from "@/lib/api";
+import { apiGetNotifications, apiMarkNotificationsRead, apiChangePassword, type Notification } from "@/lib/api";
 import Icon from "@/components/ui/icon";
 
 const pageTitles: Record<Page, string> = {
@@ -25,6 +25,12 @@ export default function TopBar({ activePage, onMenuClick, user, onLogout, onNavi
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unread, setUnread] = useState(0);
+  const [showSettings, setShowSettings] = useState(false);
+  const [oldPassword, setOldPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [settingsError, setSettingsError] = useState("");
+  const [settingsSuccess, setSettingsSuccess] = useState("");
+  const [settingsLoading, setSettingsLoading] = useState(false);
 
   useEffect(() => {
     apiGetNotifications().then(res => {
@@ -50,6 +56,33 @@ export default function TopBar({ activePage, onMenuClick, user, onLogout, onNavi
       if (diff < 1440) return `${Math.floor(diff/60)} ч назад`;
       return d.toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
     } catch { return ""; }
+  };
+
+  const handleChangePassword = async () => {
+    setSettingsError("");
+    setSettingsSuccess("");
+    if (!oldPassword || !newPassword) {
+      setSettingsError("Заполните оба поля");
+      return;
+    }
+    if (newPassword.length < 6) {
+      setSettingsError("Новый пароль должен быть не менее 6 символов");
+      return;
+    }
+    setSettingsLoading(true);
+    try {
+      const res = await apiChangePassword(oldPassword, newPassword);
+      if (res.error) {
+        setSettingsError(res.error);
+      } else {
+        setSettingsSuccess("Пароль успешно изменён");
+        setOldPassword("");
+        setNewPassword("");
+      }
+    } catch {
+      setSettingsError("Ошибка соединения");
+    }
+    setSettingsLoading(false);
   };
 
   return (
@@ -150,7 +183,10 @@ export default function TopBar({ activePage, onMenuClick, user, onLogout, onNavi
                 <Icon name="UserCircle" size={16} className="text-muted-foreground" />
                 Мой профиль
               </button>
-              <button className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-foreground hover:bg-muted transition-colors font-ibm">
+              <button
+                onClick={() => { setShowSettings(true); setShowUserMenu(false); setSettingsError(""); setSettingsSuccess(""); }}
+                className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-foreground hover:bg-muted transition-colors font-ibm"
+              >
                 <Icon name="Settings" size={16} className="text-muted-foreground" />
                 Настройки
               </button>
@@ -170,6 +206,47 @@ export default function TopBar({ activePage, onMenuClick, user, onLogout, onNavi
 
       {(showNotifications || showUserMenu) && (
         <div className="fixed inset-0 z-40" onClick={() => { setShowNotifications(false); setShowUserMenu(false); }} />
+      )}
+
+      {showSettings && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-black/40" onClick={() => setShowSettings(false)} />
+          <div className="relative bg-card border border-border rounded-xl shadow-xl w-full max-w-sm p-5 animate-scale-in">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-montserrat font-bold text-base text-foreground">Настройки</h2>
+              <button onClick={() => setShowSettings(false)} className="p-1 rounded-md hover:bg-muted transition-colors">
+                <Icon name="X" size={18} className="text-muted-foreground" />
+              </button>
+            </div>
+
+            <p className="text-xs font-montserrat font-bold text-foreground mb-3">Сменить пароль</p>
+            <div className="space-y-3">
+              <input
+                type="password"
+                placeholder="Текущий пароль"
+                value={oldPassword}
+                onChange={e => setOldPassword(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border border-border bg-muted/30 text-sm font-ibm outline-none focus:border-primary/40"
+              />
+              <input
+                type="password"
+                placeholder="Новый пароль (мин. 6 символов)"
+                value={newPassword}
+                onChange={e => setNewPassword(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border border-border bg-muted/30 text-sm font-ibm outline-none focus:border-primary/40"
+              />
+              {settingsError && <p className="text-xs text-red-600 font-ibm">{settingsError}</p>}
+              {settingsSuccess && <p className="text-xs text-green-600 font-ibm">{settingsSuccess}</p>}
+              <button
+                onClick={handleChangePassword}
+                disabled={settingsLoading}
+                className="w-full py-2.5 red-accent text-white rounded-lg text-sm font-montserrat font-medium hover:opacity-90 transition-opacity disabled:opacity-60"
+              >
+                {settingsLoading ? "Сохраняю..." : "Сохранить"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </header>
   );
