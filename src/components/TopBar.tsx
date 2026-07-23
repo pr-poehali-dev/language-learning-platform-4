@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { type Page } from "@/App";
 import { type User } from "@/pages/LoginPage";
-import { apiGetNotifications, apiMarkNotificationsRead, apiChangePassword, type Notification } from "@/lib/api";
+import { apiGetNotifications, apiMarkNotificationsRead, apiChangePassword, apiGetMaterials, apiGetHomework, apiGetCalendar, type Notification, type Material, type HomeworkItem, type Lesson } from "@/lib/api";
 import Icon from "@/components/ui/icon";
 
 const pageTitles: Record<Page, string> = {
@@ -31,13 +31,31 @@ export default function TopBar({ activePage, onMenuClick, user, onLogout, onNavi
   const [settingsError, setSettingsError] = useState("");
   const [settingsSuccess, setSettingsSuccess] = useState("");
   const [settingsLoading, setSettingsLoading] = useState(false);
+  const [search, setSearch] = useState("");
+  const [showSearchResults, setShowSearchResults] = useState(false);
+  const [searchData, setSearchData] = useState<{ materials: Material[]; homework: HomeworkItem[]; lessons: Lesson[] } | null>(null);
 
   useEffect(() => {
     apiGetNotifications().then(res => {
       if (res.notifications) setNotifications(res.notifications);
       if (res.unread !== undefined) setUnread(res.unread);
     });
+    Promise.all([apiGetMaterials(), apiGetHomework(), apiGetCalendar()]).then(([m, h, c]) => {
+      setSearchData({
+        materials: m.materials || [],
+        homework: h.homework || [],
+        lessons: c.lessons || [],
+      });
+    });
   }, []);
+
+  const searchResults = searchData && search.trim() ? {
+    materials: searchData.materials.filter(m => m.title.toLowerCase().includes(search.toLowerCase())).slice(0, 4),
+    homework: searchData.homework.filter(h => h.title.toLowerCase().includes(search.toLowerCase())).slice(0, 4),
+    lessons: searchData.lessons.filter(l => l.title.toLowerCase().includes(search.toLowerCase()) || l.topic.toLowerCase().includes(search.toLowerCase())).slice(0, 4),
+  } : null;
+
+  const hasResults = searchResults && (searchResults.materials.length > 0 || searchResults.homework.length > 0 || searchResults.lessons.length > 0);
 
   const handleOpenNotifications = () => {
     setShowNotifications(!showNotifications);
@@ -97,13 +115,70 @@ export default function TopBar({ activePage, onMenuClick, user, onLogout, onNavi
         </h1>
       </div>
 
-      <div className="hidden md:flex items-center gap-2 bg-muted rounded-lg px-3 py-1.5 w-48">
-        <Icon name="Search" size={15} className="text-muted-foreground" />
-        <input
-          type="text"
-          placeholder="Поиск..."
-          className="bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none w-full font-ibm"
-        />
+      <div className="relative hidden md:block">
+        <div className="flex items-center gap-2 bg-muted rounded-lg px-3 py-1.5 w-48">
+          <Icon name="Search" size={15} className="text-muted-foreground flex-shrink-0" />
+          <input
+            type="text"
+            placeholder="Поиск..."
+            value={search}
+            onChange={e => { setSearch(e.target.value); setShowSearchResults(true); }}
+            onFocus={() => setShowSearchResults(true)}
+            className="bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none w-full font-ibm"
+          />
+          {search && (
+            <button onClick={() => { setSearch(""); setShowSearchResults(false); }}>
+              <Icon name="X" size={13} className="text-muted-foreground" />
+            </button>
+          )}
+        </div>
+
+        {showSearchResults && search.trim() && (
+          <div className="absolute left-0 top-10 w-80 bg-card border border-border rounded-xl shadow-xl z-50 overflow-hidden animate-scale-in max-h-96 overflow-y-auto">
+            {!hasResults ? (
+              <div className="px-4 py-6 text-center text-sm text-muted-foreground font-ibm">Ничего не найдено</div>
+            ) : (
+              <div className="py-1">
+                {searchResults!.materials.length > 0 && (
+                  <div className="px-2 py-1.5">
+                    <p className="px-2 text-xs text-muted-foreground font-montserrat font-bold uppercase mb-1">Материалы</p>
+                    {searchResults!.materials.map(m => (
+                      <button key={m.id} onClick={() => { onNavigate("materials"); setShowSearchResults(false); setSearch(""); }}
+                        className="w-full flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-muted text-left transition-colors">
+                        <Icon name="FileText" size={14} className="text-muted-foreground flex-shrink-0" />
+                        <span className="text-sm text-foreground font-ibm truncate">{m.title}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {searchResults!.homework.length > 0 && (
+                  <div className="px-2 py-1.5 border-t border-border">
+                    <p className="px-2 text-xs text-muted-foreground font-montserrat font-bold uppercase mb-1">Домашние задания</p>
+                    {searchResults!.homework.map(h => (
+                      <button key={h.id} onClick={() => { onNavigate("homework"); setShowSearchResults(false); setSearch(""); }}
+                        className="w-full flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-muted text-left transition-colors">
+                        <Icon name="ClipboardList" size={14} className="text-muted-foreground flex-shrink-0" />
+                        <span className="text-sm text-foreground font-ibm truncate">{h.title}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {searchResults!.lessons.length > 0 && (
+                  <div className="px-2 py-1.5 border-t border-border">
+                    <p className="px-2 text-xs text-muted-foreground font-montserrat font-bold uppercase mb-1">Занятия</p>
+                    {searchResults!.lessons.map(l => (
+                      <button key={l.id} onClick={() => { onNavigate("calendar"); setShowSearchResults(false); setSearch(""); }}
+                        className="w-full flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-muted text-left transition-colors">
+                        <Icon name="CalendarDays" size={14} className="text-muted-foreground flex-shrink-0" />
+                        <span className="text-sm text-foreground font-ibm truncate">{l.title || l.topic}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Notifications */}
@@ -204,8 +279,8 @@ export default function TopBar({ activePage, onMenuClick, user, onLogout, onNavi
         )}
       </div>
 
-      {(showNotifications || showUserMenu) && (
-        <div className="fixed inset-0 z-40" onClick={() => { setShowNotifications(false); setShowUserMenu(false); }} />
+      {(showNotifications || showUserMenu || showSearchResults) && (
+        <div className="fixed inset-0 z-40" onClick={() => { setShowNotifications(false); setShowUserMenu(false); setShowSearchResults(false); }} />
       )}
 
       {showSettings && (
