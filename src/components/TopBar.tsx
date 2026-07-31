@@ -18,14 +18,18 @@ interface TopBarProps {
   user: User;
   onLogout: () => void;
   onNavigate: (page: Page) => void;
+  settingsOpen?: boolean;
+  onSettingsOpenChange?: (open: boolean) => void;
 }
 
-export default function TopBar({ activePage, onMenuClick, user, onLogout, onNavigate }: TopBarProps) {
+export default function TopBar({ activePage, onMenuClick, user, onLogout, onNavigate, settingsOpen, onSettingsOpenChange }: TopBarProps) {
   const [showNotifications, setShowNotifications] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unread, setUnread] = useState(0);
-  const [showSettings, setShowSettings] = useState(false);
+  const [localSettings, setLocalSettings] = useState(false);
+  const showSettings = settingsOpen ?? localSettings;
+  const setShowSettings = (v: boolean) => { onSettingsOpenChange ? onSettingsOpenChange(v) : setLocalSettings(v); };
   const [oldPassword, setOldPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [settingsError, setSettingsError] = useState("");

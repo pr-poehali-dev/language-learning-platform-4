@@ -24,9 +24,10 @@ interface SidebarProps {
   isOpen: boolean;
   onClose: () => void;
   user: User;
+  onOpenSettings: () => void;
 }
 
-export default function Sidebar({ activePage, onNavigate, isOpen, onClose, user }: SidebarProps) {
+export default function Sidebar({ activePage, onNavigate, isOpen, onClose, user, onOpenSettings }: SidebarProps) {
   const navItems = user.role === "teacher" ? teacherNav : studentNav;
   const isTeacher = user.role === "teacher";
 
@@ -113,7 +114,7 @@ export default function Sidebar({ activePage, onNavigate, isOpen, onClose, user 
 
         {/* Bottom */}
         <div className="px-3 pb-4 border-t border-sidebar-border pt-3">
-          <button className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-sidebar-foreground/50 hover:text-sidebar-foreground hover:bg-sidebar-accent/60 transition-all duration-150">
+          <button onClick={() => { onOpenSettings(); onClose(); }} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-sidebar-foreground/50 hover:text-sidebar-foreground hover:bg-sidebar-accent/60 transition-all duration-150">
             <Icon name="Settings" size={18} />
             <span className="font-ibm">Настройки</span>
           </button>

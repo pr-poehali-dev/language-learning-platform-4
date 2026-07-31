@@ -19,6 +19,7 @@ export default function App() {
   const [activePage, setActivePage] = useState<Page>("dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [checking, setChecking] = useState(true);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   // Восстановить сессию из localStorage
   useEffect(() => {
@@ -81,6 +82,7 @@ export default function App() {
           isOpen={sidebarOpen}
           onClose={() => setSidebarOpen(false)}
           user={user}
+          onOpenSettings={() => setSettingsOpen(true)}
         />
         <div className="flex-1 flex flex-col min-w-0">
           <TopBar
@@ -89,6 +91,8 @@ export default function App() {
             user={user}
             onLogout={handleLogout}
             onNavigate={setActivePage}
+            settingsOpen={settingsOpen}
+            onSettingsOpenChange={setSettingsOpen}
           />
           <main className="flex-1 overflow-y-auto p-4 md:p-6">
             <div className="animate-fade-in" key={activePage}>
