@@ -9,6 +9,7 @@ import ProfilePage from "./pages/ProfilePage";
 import LoginPage, { type User } from "./pages/LoginPage";
 import Sidebar from "./components/Sidebar";
 import TopBar from "./components/TopBar";
+import Footer from "./components/Footer";
 import { apiMe, apiLogout } from "./lib/api";
 
 export type Page = "dashboard" | "calendar" | "materials" | "homework" | "profile";
@@ -94,6 +95,7 @@ export default function App() {
               {renderPage()}
             </div>
           </main>
+          <Footer />
         </div>
       </div>
     </TooltipProvider>
