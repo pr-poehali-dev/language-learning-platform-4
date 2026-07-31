@@ -115,7 +115,7 @@ export default function TopBar({ activePage, onMenuClick, user, onLogout, onNavi
         </h1>
       </div>
 
-      <div className="relative hidden md:block">
+      <div className="relative hidden md:block z-50">
         <div className="flex items-center gap-2 bg-muted rounded-lg px-3 py-1.5 w-48">
           <Icon name="Search" size={15} className="text-muted-foreground flex-shrink-0" />
           <input
