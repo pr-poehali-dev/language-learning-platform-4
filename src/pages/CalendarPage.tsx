@@ -53,6 +53,7 @@ export default function CalendarPage({ user }: { user: User }) {
   const [editStudents, setEditStudents] = useState<number[]>([]);
   const [editError, setEditError] = useState("");
   const [editSaving, setEditSaving] = useState(false);
+  const [actionLesson, setActionLesson] = useState<Lesson | null>(null);
 
   useEffect(() => {
     apiGetCalendar()
@@ -281,7 +282,7 @@ export default function CalendarPage({ user }: { user: User }) {
               ) : moveStatus === "error" ? (
                 <span className="flex items-center gap-1.5 text-red-600"><Icon name="TriangleAlert" size={13} />Не удалось перенести</span>
               ) : (
-                <span className="flex items-center gap-1.5 text-muted-foreground"><Icon name="Move" size={13} />Перетащить — перенос, двойной клик — изменить, правый клик — удалить</span>
+                <span className="flex items-center gap-1.5 text-muted-foreground"><Icon name="Move" size={13} />Клик по занятию — изменить или удалить, перетаскивание — перенос</span>
               )}
             </div>
           )}
@@ -335,10 +336,13 @@ export default function CalendarPage({ user }: { user: User }) {
                               draggable={isTeacher && !!lesson}
                               onDragStart={() => lesson && setDragId(lesson.id)}
                               onDragEnd={() => { setDragId(null); setDropTarget(null); }}
-                              onClick={() => handleSlotClick(dateKey, time)}
-                              onDoubleClick={() => { if (isTeacher && lesson) openEdit(lesson); }}
-                              onContextMenu={e => {
-                                if (isTeacher && lesson) { e.preventDefault(); setConfirmDelete(lesson); }
+                              onClick={() => {
+                                if (isTeacher && lesson) {
+                                  setSelected({ date: dateKey, time });
+                                  setActionLesson(lesson);
+                                } else {
+                                  handleSlotClick(dateKey, time);
+                                }
                               }}
                               className={`w-full h-12 rounded-md text-xs font-montserrat font-bold transition-all duration-150 flex flex-col items-center justify-center gap-0.5 px-1
                                 ${lesson
@@ -601,6 +605,47 @@ export default function CalendarPage({ user }: { user: User }) {
           </div>
         </div>
       </div>
+
+      {actionLesson && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-black/40" onClick={() => setActionLesson(null)} />
+          <div className="relative bg-card border border-border rounded-xl shadow-xl w-full max-w-sm p-5 animate-scale-in">
+            <div className="flex items-start justify-between mb-3">
+              <div className="min-w-0">
+                <h2 className="font-montserrat font-bold text-base text-foreground truncate">{actionLesson.topic}</h2>
+                <p className="text-sm text-muted-foreground font-ibm">
+                  {new Date(actionLesson.lesson_date + "T12:00:00").toLocaleDateString("ru-RU", { day: "numeric", month: "long" })} в {actionLesson.lesson_time.slice(0, 5)}
+                </p>
+              </div>
+              <button onClick={() => setActionLesson(null)} className="p-1 rounded-md hover:bg-muted transition-colors flex-shrink-0">
+                <Icon name="X" size={18} className="text-muted-foreground" />
+              </button>
+            </div>
+
+            <p className="text-sm text-muted-foreground font-ibm mb-4">Что сделать с этим занятием?</p>
+
+            <div className="space-y-2">
+              <button onClick={() => { openEdit(actionLesson); setActionLesson(null); }}
+                className="w-full flex items-center gap-3 px-4 py-3 rounded-lg border border-border hover:bg-muted transition-colors text-left">
+                <Icon name="Pencil" size={18} className="text-primary" />
+                <div>
+                  <p className="text-sm font-montserrat font-bold text-foreground">Редактировать</p>
+                  <p className="text-xs text-muted-foreground font-ibm">Тема, время, ученики</p>
+                </div>
+              </button>
+
+              <button onClick={() => { setConfirmDelete(actionLesson); setActionLesson(null); }}
+                className="w-full flex items-center gap-3 px-4 py-3 rounded-lg border border-red-200 hover:bg-red-50 transition-colors text-left">
+                <Icon name="Trash2" size={18} className="text-red-600" />
+                <div>
+                  <p className="text-sm font-montserrat font-bold text-red-600">Удалить</p>
+                  <p className="text-xs text-muted-foreground font-ibm">Занятие будет отменено</p>
+                </div>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {editLesson && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
