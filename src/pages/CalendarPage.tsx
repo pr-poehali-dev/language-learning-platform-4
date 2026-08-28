@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import Icon from "@/components/ui/icon";
-import { apiGetCalendar, apiCreateLesson, apiMoveLesson, apiDeleteLesson, apiUpdateLesson, apiGetStudents, type Lesson, type StudentInfo, type User } from "@/lib/api";
+import { apiGetCalendar, apiCreateLesson, apiMoveLesson, apiDeleteLesson, apiUpdateLesson, apiGetStudents, apiGetGroups, type Lesson, type StudentInfo, type StudentGroup } from "@/lib/api";
+import { type User } from "@/pages/LoginPage";
 
 const DAYS = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"];
 const MONTHS_GEN = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"];
@@ -55,6 +56,7 @@ export default function CalendarPage({ user }: { user: User }) {
   const [editSaving, setEditSaving] = useState(false);
   const [actionLesson, setActionLesson] = useState<Lesson | null>(null);
   const [filterStudent, setFilterStudent] = useState<number | null>(null);
+  const [groups, setGroups] = useState<StudentGroup[]>([]);
 
   useEffect(() => {
     apiGetCalendar()
@@ -63,6 +65,7 @@ export default function CalendarPage({ user }: { user: User }) {
       .finally(() => setLoading(false));
     if (isTeacher) {
       apiGetStudents().then(res => { if (res.students) setStudents(res.students); }).catch(() => {});
+      apiGetGroups().then(res => { if (res.groups) setGroups(res.groups); }).catch(() => {});
     }
   }, [isTeacher]);
 
@@ -456,10 +459,31 @@ export default function CalendarPage({ user }: { user: User }) {
                 {lessonTypes.map(t => <option key={t}>{t}</option>)}
               </select>
 
+              {groups.length > 0 && (
+                <div>
+                  <p className="text-xs font-montserrat font-bold text-muted-foreground mb-1.5">Назначить группе</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {groups.map(g => {
+                      const ids = g.students.map(s => s.id);
+                      const active = ids.length > 0 && ids.every(id => selectedStudents.includes(id))
+                        && selectedStudents.length === ids.length;
+                      return (
+                        <button type="button" key={g.id}
+                          onClick={() => { setSelectedStudents(active ? [] : ids); if (formError) setFormError(""); }}
+                          className={`text-xs px-2.5 py-1.5 rounded-full font-montserrat font-medium transition-colors
+                            ${active ? "bg-primary text-white" : "border border-border text-foreground hover:bg-muted"}`}>
+                          {g.name} · {g.students.length}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               <div className={`rounded-lg border ${formError && selectedStudents.length === 0 ? "border-red-400" : "border-border"}`}>
                 <div className="flex items-center justify-between px-3 py-2 border-b border-border">
                   <p className="text-xs font-montserrat font-bold text-foreground">
-                    Ученики {selectedStudents.length > 0 && <span className="text-primary">· {selectedStudents.length}</span>}
+                    Или отметить учеников {selectedStudents.length > 0 && <span className="text-primary">· {selectedStudents.length}</span>}
                   </p>
                   <button type="button"
                     onClick={() => {
@@ -741,10 +765,31 @@ export default function CalendarPage({ user }: { user: User }) {
                 </div>
               </div>
 
+              {groups.length > 0 && (
+                <div>
+                  <p className="text-xs font-montserrat font-bold text-muted-foreground mb-1.5">Назначить группе</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {groups.map(g => {
+                      const ids = g.students.map(s => s.id);
+                      const active = ids.length > 0 && ids.every(id => editStudents.includes(id))
+                        && editStudents.length === ids.length;
+                      return (
+                        <button type="button" key={g.id}
+                          onClick={() => { setEditStudents(active ? [] : ids); if (editError) setEditError(""); }}
+                          className={`text-xs px-2.5 py-1.5 rounded-full font-montserrat font-medium transition-colors
+                            ${active ? "bg-primary text-white" : "border border-border text-foreground hover:bg-muted"}`}>
+                          {g.name} · {g.students.length}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               <div className={`rounded-lg border ${editError && editStudents.length === 0 ? "border-red-400" : "border-border"}`}>
                 <div className="flex items-center justify-between px-3 py-2 border-b border-border">
                   <p className="text-xs font-montserrat font-bold text-foreground">
-                    Ученики {editStudents.length > 0 && <span className="text-primary">· {editStudents.length}</span>}
+                    Или отметить учеников {editStudents.length > 0 && <span className="text-primary">· {editStudents.length}</span>}
                   </p>
                   <button type="button"
                     onClick={() => {
