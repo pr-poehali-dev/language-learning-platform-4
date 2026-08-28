@@ -54,6 +54,7 @@ export default function CalendarPage({ user }: { user: User }) {
   const [editError, setEditError] = useState("");
   const [editSaving, setEditSaving] = useState(false);
   const [actionLesson, setActionLesson] = useState<Lesson | null>(null);
+  const [filterStudent, setFilterStudent] = useState<number | null>(null);
 
   useEffect(() => {
     apiGetCalendar()
@@ -74,9 +75,13 @@ export default function CalendarPage({ user }: { user: User }) {
   const weekEnd = weekDays[6];
   const isCurrentWeek = toKey(weekStart) === toKey(currentMonday);
 
+  const visibleLessons = filterStudent
+    ? lessons.filter(l => (l.students || []).some(s => s.id === filterStudent))
+    : lessons;
+
   const weekFrom = toKey(weekStart);
   const weekTo = toKey(weekEnd);
-  const weekLessonTimes = lessons
+  const weekLessonTimes = visibleLessons
     .filter(l => l.lesson_date >= weekFrom && l.lesson_date <= weekTo)
     .map(l => l.lesson_time.slice(0, 5));
   const TIME_SLOTS = Array.from(new Set([...DEFAULT_SLOTS, ...weekLessonTimes])).sort();
@@ -89,7 +94,7 @@ export default function CalendarPage({ user }: { user: User }) {
   };
 
   const findLesson = (dateKey: string, time: string) =>
-    lessons.find(l => l.lesson_date === dateKey && l.lesson_time.slice(0, 5) === time);
+    visibleLessons.find(l => l.lesson_date === dateKey && l.lesson_time.slice(0, 5) === time);
 
   const selectedLesson = selected ? findLesson(selected.date, selected.time) : null;
 
@@ -200,6 +205,7 @@ export default function CalendarPage({ user }: { user: User }) {
     setSelected({ date: dateKey, time });
     if (!lesson && isTeacher) {
       setForm({ ...form, lesson_date: dateKey, lesson_time: time });
+      if (filterStudent) setSelectedStudents([filterStudent]);
       setFormError("");
       setShowAdd(true);
     }
@@ -273,6 +279,27 @@ export default function CalendarPage({ user }: { user: User }) {
               <Icon name="ChevronRight" size={15} />
             </button>
           </div>
+
+          {isTeacher && students.length > 0 && (
+            <div className="px-4 py-2 border-b border-border flex items-center gap-2 flex-wrap">
+              <Icon name="Filter" size={13} className="text-muted-foreground" />
+              <button onClick={() => setFilterStudent(null)}
+                className={`text-xs px-2.5 py-1 rounded-full font-montserrat font-medium transition-colors
+                  ${filterStudent === null ? "bg-primary text-white" : "border border-border text-muted-foreground hover:bg-muted"}`}>
+                Все ученики
+              </button>
+              {students.map(s => (
+                <button key={s.id} onClick={() => setFilterStudent(filterStudent === s.id ? null : s.id)}
+                  className={`flex items-center gap-1.5 text-xs pl-1 pr-2.5 py-1 rounded-full font-montserrat font-medium transition-colors
+                    ${filterStudent === s.id ? "bg-primary text-white" : "border border-border text-muted-foreground hover:bg-muted"}`}>
+                  <span className="w-5 h-5 rounded-full red-accent flex items-center justify-center">
+                    <span className="text-white font-bold text-[9px]">{s.avatar}</span>
+                  </span>
+                  {s.name}
+                </button>
+              ))}
+            </div>
+          )}
 
           {isTeacher && (
             <div className="px-4 py-2 border-b border-border flex items-center gap-2 text-xs font-ibm">
@@ -578,7 +605,7 @@ export default function CalendarPage({ user }: { user: User }) {
             ) : (() => {
               const from = toKey(weekStart);
               const to = toKey(weekEnd);
-              const weekLessons = lessons
+              const weekLessons = visibleLessons
                 .filter(l => l.lesson_date >= from && l.lesson_date <= to)
                 .sort((a, b) => (a.lesson_date + a.lesson_time).localeCompare(b.lesson_date + b.lesson_time));
               if (weekLessons.length === 0) {
