@@ -7,6 +7,7 @@ import Icon from "@/components/ui/icon";
 const pageTitles: Record<Page, string> = {
   dashboard: "Главная",
   calendar: "Календарь занятий",
+  lesson: "Видеоурок",
   materials: "Учебные материалы",
   homework: "Домашние задания",
   students: "Ученики и группы",

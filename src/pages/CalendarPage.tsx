@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import Icon from "@/components/ui/icon";
 import { apiGetCalendar, apiCreateLesson, apiMoveLesson, apiDeleteLesson, apiUpdateLesson, apiGetStudents, apiGetGroups, type Lesson, type StudentInfo, type StudentGroup } from "@/lib/api";
 import { type User } from "@/pages/LoginPage";
+import { buildRoomName } from "@/pages/LessonRoomPage";
 
 const DAYS = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"];
 const MONTHS_GEN = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"];
@@ -28,7 +29,7 @@ const getMonday = (d: Date) => {
   return date;
 };
 
-export default function CalendarPage({ user }: { user: User }) {
+export default function CalendarPage({ user, onJoinLesson }: { user: User; onJoinLesson?: (room: string) => void }) {
   const today = new Date();
   const todayKey = toKey(today);
   const currentMonday = getMonday(today);
@@ -587,8 +588,10 @@ export default function CalendarPage({ user }: { user: User }) {
                     </div>
                   )}
 
-                  <button className="mt-3 w-full py-2 rounded-lg border border-primary text-primary text-sm font-montserrat font-medium hover:bg-primary hover:text-white transition-colors">
-                    Присоединиться к уроку
+                  <button onClick={() => onJoinLesson?.(buildRoomName(selectedLesson))}
+                    className="mt-3 w-full flex items-center justify-center gap-2 py-2 rounded-lg red-accent text-white text-sm font-montserrat font-bold hover:opacity-90 transition-opacity">
+                    <Icon name="Video" size={16} />
+                    Начать урок
                   </button>
 
                   {isTeacher && (

@@ -7,13 +7,14 @@ import MaterialsPage from "./pages/MaterialsPage";
 import HomeworkPage from "./pages/HomeworkPage";
 import ProfilePage from "./pages/ProfilePage";
 import StudentsPage from "./pages/StudentsPage";
+import LessonRoomPage from "./pages/LessonRoomPage";
 import LoginPage, { type User } from "./pages/LoginPage";
 import Sidebar from "./components/Sidebar";
 import TopBar from "./components/TopBar";
 import Footer from "./components/Footer";
 import { apiMe, apiLogout } from "./lib/api";
 
-export type Page = "dashboard" | "calendar" | "materials" | "homework" | "students" | "profile";
+export type Page = "dashboard" | "calendar" | "lesson" | "materials" | "homework" | "students" | "profile";
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -21,6 +22,7 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [checking, setChecking] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [lessonRoom, setLessonRoom] = useState<string | null>(null);
 
   // Восстановить сессию из localStorage
   useEffect(() => {
@@ -65,7 +67,8 @@ export default function App() {
   const renderPage = () => {
     switch (activePage) {
       case "dashboard": return <Dashboard onNavigate={setActivePage} user={user} />;
-      case "calendar": return <CalendarPage user={user} />;
+      case "calendar": return <CalendarPage user={user} onJoinLesson={(room) => { setLessonRoom(room); setActivePage("lesson"); }} />;
+      case "lesson": return <LessonRoomPage user={user} initialRoom={lessonRoom} onLeave={() => setLessonRoom(null)} />;
       case "materials": return <MaterialsPage user={user} />;
       case "homework": return <HomeworkPage user={user} />;
       case "students": return <StudentsPage user={user} />;
