@@ -114,6 +114,11 @@ export async function apiCreateLesson(data: CreateLessonData) {
   return r.data as { ok?: boolean; id?: number; error?: string };
 }
 
+export async function apiMoveLesson(data: { id: number; lesson_date: string; lesson_time: string }) {
+  const r = await request(API_URL + "?p=calendar", { method: "PUT", body: JSON.stringify(data) });
+  return r.data as { ok?: boolean; error?: string };
+}
+
 export async function apiGetMessages(withUserId?: number) {
   const url = withUserId ? `${API_URL}?p=chat&with=${withUserId}` : `${API_URL}?p=chat`;
   const r = await request(url);

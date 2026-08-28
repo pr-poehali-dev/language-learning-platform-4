@@ -72,6 +72,8 @@ def handler(event: dict, context) -> dict:
                 return get_lessons(conn, user_id, role)
             if method == "POST":
                 return create_lesson(event, conn, user_id, role)
+            if method == "PUT":
+                return move_lesson(event, conn, user_id, role)
 
         # --- Chat ---
         if path == "chat":
@@ -200,6 +202,34 @@ def create_lesson(event, conn, user_id, role):
                     (sid, f"Новое занятие {lesson_date} {lesson_time}: {topic}"))
     conn.commit(); cur.close(); conn.close()
     return resp(200, {"ok": True, "id": lesson_id})
+
+def move_lesson(event, conn, user_id, role):
+    if role != "teacher":
+        conn.close()
+        return resp(403, {"error": "Только преподаватель"})
+    body = json.loads(event.get("body") or "{}")
+    lesson_id = body.get("id")
+    lesson_date = body.get("lesson_date")
+    lesson_time = body.get("lesson_time")
+    if not lesson_id or not lesson_date or not lesson_time:
+        conn.close()
+        return resp(400, {"error": "id, дата и время обязательны"})
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE lessons SET lesson_date=%s, lesson_time=%s WHERE id=%s AND teacher_id=%s RETURNING topic",
+        (lesson_date, lesson_time, lesson_id, user_id)
+    )
+    row = cur.fetchone()
+    if not row:
+        cur.close(); conn.close()
+        return resp(404, {"error": "Занятие не найдено"})
+    topic = row[0]
+    cur.execute("SELECT student_id FROM lesson_students WHERE lesson_id=%s", (lesson_id,))
+    for (sid,) in cur.fetchall():
+        cur.execute("INSERT INTO notifications (user_id, text, type) VALUES (%s,%s,'calendar')",
+                    (sid, f"Занятие перенесено на {lesson_date} {lesson_time}: {topic}"))
+    conn.commit(); cur.close(); conn.close()
+    return resp(200, {"ok": True})
 
 
 # ── Chat ───────────────────────────────────────────────────────────────────────

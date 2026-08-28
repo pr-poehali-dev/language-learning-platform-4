@@ -1,11 +1,11 @@
 import { useState, useEffect } from "react";
 import Icon from "@/components/ui/icon";
-import { apiGetCalendar, apiCreateLesson, type Lesson, type User } from "@/lib/api";
+import { apiGetCalendar, apiCreateLesson, apiMoveLesson, type Lesson, type User } from "@/lib/api";
 
 const DAYS = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"];
 const MONTHS_GEN = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"];
 
-const TIME_SLOTS = ["10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00"];
+const TIME_SLOTS = ["10:00", "12:00", "14:00", "16:00", "18:00"];
 
 const typeColors: Record<string, string> = {
   "Грамматика": "bg-primary/15 text-primary border-primary/20",
@@ -31,6 +31,7 @@ export default function CalendarPage({ user }: { user: User }) {
   const today = new Date();
   const todayKey = toKey(today);
   const currentMonday = getMonday(today);
+  const isTeacher = user.role === "teacher";
 
   const [weekStart, setWeekStart] = useState<Date>(currentMonday);
   const [selected, setSelected] = useState<{ date: string; time: string } | null>(null);
@@ -39,6 +40,9 @@ export default function CalendarPage({ user }: { user: User }) {
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState({ topic: "", lesson_date: "", lesson_time: "18:00", duration_min: 60, lesson_type: "Грамматика" });
   const [saving, setSaving] = useState(false);
+  const [dragId, setDragId] = useState<number | null>(null);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const [moveStatus, setMoveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
   useEffect(() => {
     apiGetCalendar()
@@ -70,10 +74,42 @@ export default function CalendarPage({ user }: { user: User }) {
 
   const rangeLabel = `${weekStart.getDate()} ${MONTHS_GEN[weekStart.getMonth()]} - ${weekEnd.getDate()} ${MONTHS_GEN[weekEnd.getMonth()]}`;
 
+  const moveLesson = async (lessonId: number, newDate: string, newTime: string) => {
+    const lesson = lessons.find(l => l.id === lessonId);
+    if (!lesson) return;
+    if (findLesson(newDate, newTime)) return;
+    const prev = lessons;
+    setLessons(prev.map(l => l.id === lessonId ? { ...l, lesson_date: newDate, lesson_time: newTime } : l));
+    setSelected({ date: newDate, time: newTime });
+    setMoveStatus("saving");
+    try {
+      const res = await apiMoveLesson({ id: lessonId, lesson_date: newDate, lesson_time: newTime });
+      if (res.ok) {
+        setMoveStatus("saved");
+        setTimeout(() => setMoveStatus("idle"), 1800);
+      } else {
+        setLessons(prev);
+        setMoveStatus("error");
+        setTimeout(() => setMoveStatus("idle"), 2500);
+      }
+    } catch {
+      setLessons(prev);
+      setMoveStatus("error");
+      setTimeout(() => setMoveStatus("idle"), 2500);
+    }
+  };
+
+  const shiftLessonSlot = (lesson: Lesson, delta: number) => {
+    const idx = TIME_SLOTS.indexOf(lesson.lesson_time.slice(0, 5));
+    const next = idx + delta;
+    if (idx === -1 || next < 0 || next >= TIME_SLOTS.length) return;
+    moveLesson(lesson.id, lesson.lesson_date, TIME_SLOTS[next]);
+  };
+
   const handleSlotClick = (dateKey: string, time: string) => {
     const lesson = findLesson(dateKey, time);
     setSelected({ date: dateKey, time });
-    if (!lesson && user.role === "teacher") {
+    if (!lesson && isTeacher) {
       setForm({ ...form, lesson_date: dateKey, lesson_time: time });
       setShowAdd(true);
     }
@@ -129,6 +165,20 @@ export default function CalendarPage({ user }: { user: User }) {
             </button>
           </div>
 
+          {isTeacher && (
+            <div className="px-4 py-2 border-b border-border flex items-center gap-2 text-xs font-ibm">
+              {moveStatus === "saving" ? (
+                <span className="flex items-center gap-1.5 text-muted-foreground"><Icon name="Loader" size={13} className="animate-spin" />Сохраняю перенос...</span>
+              ) : moveStatus === "saved" ? (
+                <span className="flex items-center gap-1.5 text-green-600"><Icon name="Check" size={13} />Изменения сохранены</span>
+              ) : moveStatus === "error" ? (
+                <span className="flex items-center gap-1.5 text-red-600"><Icon name="TriangleAlert" size={13} />Не удалось перенести</span>
+              ) : (
+                <span className="flex items-center gap-1.5 text-muted-foreground"><Icon name="Move" size={13} />Перетащите занятие мышкой или двигайте стрелками</span>
+              )}
+            </div>
+          )}
+
           <div className="overflow-x-auto">
             <div className="min-w-[560px]">
               <div className="grid grid-cols-7 border-b border-border bg-muted/40">
@@ -151,24 +201,60 @@ export default function CalendarPage({ user }: { user: User }) {
                   const isPast = dateKey < todayKey;
                   return (
                     <div key={di} className="border-r border-border last:border-r-0 p-1.5 space-y-1.5">
-                      {TIME_SLOTS.map(time => {
+                      {TIME_SLOTS.map((time, ti) => {
                         const lesson = findLesson(dateKey, time);
                         const isSelected = selected?.date === dateKey && selected?.time === time;
+                        const cellKey = `${dateKey}_${time}`;
+                        const isDropOver = dropTarget === cellKey;
+
                         if (isPast && !lesson) {
-                          return <div key={time} className="h-8 rounded-md bg-muted/30" />;
+                          return <div key={time} className="h-12 rounded-md bg-muted/30" />;
                         }
+
                         return (
-                          <button
+                          <div
                             key={time}
-                            onClick={() => handleSlotClick(dateKey, time)}
-                            className={`w-full h-8 rounded-md text-xs font-montserrat font-bold transition-all duration-150
-                              ${lesson
-                                ? "bg-orange-300 text-orange-900 hover:bg-orange-400"
-                                : "bg-green-500 text-white hover:bg-green-600"}
-                              ${isSelected ? "ring-2 ring-offset-1 ring-primary" : ""}`}
+                            onDragOver={e => { if (isTeacher && dragId !== null && !lesson) { e.preventDefault(); setDropTarget(cellKey); } }}
+                            onDragLeave={() => setDropTarget(prev => prev === cellKey ? null : prev)}
+                            onDrop={e => {
+                              e.preventDefault();
+                              setDropTarget(null);
+                              if (dragId !== null && !lesson) moveLesson(dragId, dateKey, time);
+                              setDragId(null);
+                            }}
+                            className={`relative rounded-md ${isDropOver ? "ring-2 ring-primary ring-offset-1" : ""}`}
                           >
-                            {time}
-                          </button>
+                            <button
+                              draggable={isTeacher && !!lesson}
+                              onDragStart={() => lesson && setDragId(lesson.id)}
+                              onDragEnd={() => { setDragId(null); setDropTarget(null); }}
+                              onClick={() => handleSlotClick(dateKey, time)}
+                              className={`w-full h-12 rounded-md text-xs font-montserrat font-bold transition-all duration-150 flex flex-col items-center justify-center gap-0.5 px-1
+                                ${lesson
+                                  ? "bg-orange-300 text-orange-900 hover:bg-orange-400 cursor-grab active:cursor-grabbing"
+                                  : "bg-green-500 text-white hover:bg-green-600"}
+                                ${isSelected ? "ring-2 ring-offset-1 ring-primary" : ""}
+                                ${dragId === lesson?.id ? "opacity-40" : ""}`}
+                            >
+                              <span>{time}</span>
+                              {lesson && <span className="text-[10px] font-normal font-ibm truncate w-full">{lesson.topic}</span>}
+                            </button>
+
+                            {isTeacher && lesson && (
+                              <div className="md:hidden absolute -right-0.5 top-0 flex flex-col gap-0.5">
+                                <button onClick={e => { e.stopPropagation(); shiftLessonSlot(lesson, -1); }}
+                                  disabled={ti === 0}
+                                  className="w-5 h-[22px] rounded bg-white/80 border border-orange-400 text-orange-700 flex items-center justify-center disabled:opacity-30">
+                                  <Icon name="ChevronUp" size={12} />
+                                </button>
+                                <button onClick={e => { e.stopPropagation(); shiftLessonSlot(lesson, 1); }}
+                                  disabled={ti === TIME_SLOTS.length - 1}
+                                  className="w-5 h-[22px] rounded bg-white/80 border border-orange-400 text-orange-700 flex items-center justify-center disabled:opacity-30">
+                                  <Icon name="ChevronDown" size={12} />
+                                </button>
+                              </div>
+                            )}
+                          </div>
                         );
                       })}
                     </div>
@@ -187,7 +273,7 @@ export default function CalendarPage({ user }: { user: User }) {
 
         {/* Details */}
         <div className="lg:col-span-2 space-y-3">
-          {user.role === "teacher" && (
+          {isTeacher && (
             <button onClick={() => setShowAdd(!showAdd)}
               className="w-full flex items-center justify-center gap-2 py-2.5 red-accent text-white rounded-xl text-sm font-montserrat font-medium hover:opacity-90 transition-opacity">
               <Icon name="Plus" size={16} />
@@ -204,8 +290,10 @@ export default function CalendarPage({ user }: { user: User }) {
               <div className="grid grid-cols-2 gap-2">
                 <input type="date" value={form.lesson_date} onChange={e => setForm({ ...form, lesson_date: e.target.value })}
                   className="px-3 py-2 rounded-lg border border-border bg-muted/30 text-sm font-ibm outline-none focus:border-primary/40" />
-                <input type="time" value={form.lesson_time} onChange={e => setForm({ ...form, lesson_time: e.target.value })}
-                  className="px-3 py-2 rounded-lg border border-border bg-muted/30 text-sm font-ibm outline-none focus:border-primary/40" />
+                <select value={form.lesson_time} onChange={e => setForm({ ...form, lesson_time: e.target.value })}
+                  className="px-3 py-2 rounded-lg border border-border bg-muted/30 text-sm font-ibm outline-none focus:border-primary/40">
+                  {TIME_SLOTS.map(t => <option key={t}>{t}</option>)}
+                </select>
               </div>
               <select value={form.lesson_type} onChange={e => setForm({ ...form, lesson_type: e.target.value })}
                 className="w-full px-3 py-2 rounded-lg border border-border bg-muted/30 text-sm font-ibm outline-none focus:border-primary/40">
@@ -236,7 +324,23 @@ export default function CalendarPage({ user }: { user: User }) {
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
                     <Icon name="Clock" size={13} /><span className="font-ibm">{selectedLesson.duration_min} минут</span>
                   </div>
-                  <button className="mt-4 w-full py-2 rounded-lg border border-primary text-primary text-sm font-montserrat font-medium hover:bg-primary hover:text-white transition-colors">
+
+                  {isTeacher && (
+                    <div className="mt-3 flex items-center gap-2">
+                      <button onClick={() => shiftLessonSlot(selectedLesson, -1)}
+                        disabled={TIME_SLOTS.indexOf(selectedLesson.lesson_time.slice(0, 5)) === 0}
+                        className="flex-1 flex items-center justify-center gap-1 py-2 rounded-lg border border-border text-xs font-montserrat font-medium hover:bg-muted disabled:opacity-40 transition-colors">
+                        <Icon name="ChevronUp" size={14} />Раньше
+                      </button>
+                      <button onClick={() => shiftLessonSlot(selectedLesson, 1)}
+                        disabled={TIME_SLOTS.indexOf(selectedLesson.lesson_time.slice(0, 5)) === TIME_SLOTS.length - 1}
+                        className="flex-1 flex items-center justify-center gap-1 py-2 rounded-lg border border-border text-xs font-montserrat font-medium hover:bg-muted disabled:opacity-40 transition-colors">
+                        <Icon name="ChevronDown" size={14} />Позже
+                      </button>
+                    </div>
+                  )}
+
+                  <button className="mt-3 w-full py-2 rounded-lg border border-primary text-primary text-sm font-montserrat font-medium hover:bg-primary hover:text-white transition-colors">
                     Присоединиться к уроку
                   </button>
                 </div>
@@ -271,17 +375,33 @@ export default function CalendarPage({ user }: { user: User }) {
               }
               return (
                 <div className="divide-y divide-border">
-                  {weekLessons.map((l, i) => (
-                    <button key={i} onClick={() => setSelected({ date: l.lesson_date, time: l.lesson_time.slice(0, 5) })}
-                      className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-muted transition-colors text-left">
-                      <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
-                        <Icon name="BookOpen" size={14} className="text-primary" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-xs font-medium text-foreground truncate font-ibm">{l.topic}</p>
-                        <p className="text-xs text-muted-foreground">{l.lesson_date} · {l.lesson_time}</p>
-                      </div>
-                    </button>
+                  {weekLessons.map(l => (
+                    <div key={l.id} className="flex items-center gap-2 px-4 py-2.5">
+                      <button onClick={() => setSelected({ date: l.lesson_date, time: l.lesson_time.slice(0, 5) })}
+                        className="flex items-center gap-3 flex-1 min-w-0 text-left">
+                        <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                          <Icon name="BookOpen" size={14} className="text-primary" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-medium text-foreground truncate font-ibm">{l.topic}</p>
+                          <p className="text-xs text-muted-foreground">{l.lesson_date} · {l.lesson_time}</p>
+                        </div>
+                      </button>
+                      {isTeacher && (
+                        <div className="flex flex-col gap-0.5 flex-shrink-0">
+                          <button onClick={() => shiftLessonSlot(l, -1)}
+                            disabled={TIME_SLOTS.indexOf(l.lesson_time.slice(0, 5)) === 0}
+                            className="w-6 h-5 rounded border border-border flex items-center justify-center hover:bg-muted disabled:opacity-30">
+                            <Icon name="ChevronUp" size={12} className="text-muted-foreground" />
+                          </button>
+                          <button onClick={() => shiftLessonSlot(l, 1)}
+                            disabled={TIME_SLOTS.indexOf(l.lesson_time.slice(0, 5)) === TIME_SLOTS.length - 1}
+                            className="w-6 h-5 rounded border border-border flex items-center justify-center hover:bg-muted disabled:opacity-30">
+                            <Icon name="ChevronDown" size={12} className="text-muted-foreground" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   ))}
                 </div>
               );
