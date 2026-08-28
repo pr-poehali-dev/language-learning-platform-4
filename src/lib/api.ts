@@ -88,8 +88,22 @@ export async function apiUpdateHomework(data: UpdateHomeworkData) {
 }
 
 export async function apiGetStudents() {
-  const r = await request(HOMEWORK_URL + "?p=students");
+  const r = await request(API_URL + "?p=students");
   return r.data as { students?: StudentInfo[]; error?: string };
+}
+
+export async function apiUpdateStudent(data: {
+  id: number;
+  email: string;
+  name?: string;
+  level?: string;
+  phone?: string;
+  social_name?: string;
+  social_url?: string;
+  note?: string;
+}) {
+  const r = await request(API_URL + "?p=students", { method: "PUT", body: JSON.stringify(data) });
+  return r.data as { ok?: boolean; error?: string };
 }
 
 // ── API (materials, calendar, chat, notifications) ────────────────────────────
@@ -234,6 +248,11 @@ export interface StudentInfo {
   avatar: string;
   level?: string;
   lessons_count?: number;
+  email?: string;
+  phone?: string;
+  social_name?: string;
+  social_url?: string;
+  note?: string;
 }
 
 export interface StudentGroup {

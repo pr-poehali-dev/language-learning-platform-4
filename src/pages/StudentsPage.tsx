@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import Icon from "@/components/ui/icon";
 import {
-  apiGetStudents, apiGetGroups, apiCreateGroup, apiUpdateGroup, apiDeleteGroup,
+  apiGetStudents, apiGetGroups, apiCreateGroup, apiUpdateGroup, apiDeleteGroup, apiUpdateStudent,
   type StudentInfo, type StudentGroup,
 } from "@/lib/api";
 import { type User } from "@/pages/LoginPage";
@@ -32,6 +32,11 @@ export default function StudentsPage({ user }: { user: User }) {
   const [confirmDelete, setConfirmDelete] = useState<StudentGroup | null>(null);
   const [deleting, setDeleting] = useState(false);
 
+  const [editStudent, setEditStudent] = useState<StudentInfo | null>(null);
+  const [sForm, setSForm] = useState({ name: "", level: "", email: "", phone: "", social_name: "", social_url: "", note: "" });
+  const [sError, setSError] = useState("");
+  const [sSaving, setSSaving] = useState(false);
+
   const loadAll = () => {
     Promise.all([apiGetStudents(), isTeacher ? apiGetGroups() : Promise.resolve({ groups: [] })])
       .then(([s, g]) => {
@@ -44,10 +49,61 @@ export default function StudentsPage({ user }: { user: User }) {
 
   useEffect(loadAll, [isTeacher]);
 
-  const filtered = students.filter(s => s.name.toLowerCase().includes(search.toLowerCase()));
+  const q = search.toLowerCase().trim();
+  const filtered = students.filter(s =>
+    !q || s.name.toLowerCase().includes(q) ||
+    (s.email || "").toLowerCase().includes(q) ||
+    (s.phone || "").includes(q)
+  );
 
   const groupsOf = (studentId: number) =>
     groups.filter(g => g.students.some(s => s.id === studentId));
+
+  const openStudent = (s: StudentInfo) => {
+    setEditStudent(s);
+    setSForm({
+      name: s.name,
+      level: s.level || "",
+      email: s.email || "",
+      phone: s.phone || "",
+      social_name: s.social_name || "",
+      social_url: s.social_url || "",
+      note: s.note || "",
+    });
+    setSError("");
+  };
+
+  const handleSaveStudent = async () => {
+    if (!editStudent) return;
+    const email = sForm.email.trim();
+    if (!email) { setSError("Электронная почта обязательна для заполнения"); return; }
+    if (!email.includes("@") || !email.includes(".")) { setSError("Проверьте формат почты, например ivan@mail.ru"); return; }
+    setSError("");
+    setSSaving(true);
+    try {
+      const res = await apiUpdateStudent({
+        id: editStudent.id,
+        email,
+        name: sForm.name.trim(),
+        level: sForm.level.trim(),
+        phone: sForm.phone.trim(),
+        social_name: sForm.social_name.trim(),
+        social_url: sForm.social_url.trim(),
+        note: sForm.note.trim(),
+      });
+      if (res.ok) {
+        const s = await apiGetStudents();
+        if (s.students) setStudents(s.students);
+        setEditStudent(null);
+      } else {
+        setSError(res.error || "Не удалось сохранить данные");
+      }
+    } catch {
+      setSError("Нет связи с сервером, попробуйте ещё раз");
+    } finally {
+      setSSaving(false);
+    }
+  };
 
   const openNew = () => {
     setEditor("new");
@@ -144,7 +200,7 @@ export default function StudentsPage({ user }: { user: User }) {
           <div className="px-4 py-3 border-b border-border">
             <div className="flex items-center gap-2 bg-muted rounded-lg px-3 py-2">
               <Icon name="Search" size={15} className="text-muted-foreground flex-shrink-0" />
-              <input type="text" placeholder="Поиск по имени..." value={search}
+              <input type="text" placeholder="Поиск по имени, почте, телефону..." value={search}
                 onChange={e => setSearch(e.target.value)}
                 className="bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none w-full font-ibm" />
             </div>
@@ -178,11 +234,37 @@ export default function StudentsPage({ user }: { user: User }) {
                         })}
                       </div>
                     </div>
+                    <div className="hidden md:flex flex-col items-end gap-0.5 flex-shrink-0 mr-1">
+                      {s.email && (
+                        <a href={`mailto:${s.email}`} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary font-ibm">
+                          <Icon name="Mail" size={12} />{s.email}
+                        </a>
+                      )}
+                      {s.phone && (
+                        <a href={`tel:${s.phone}`} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary font-ibm">
+                          <Icon name="Phone" size={12} />{s.phone}
+                        </a>
+                      )}
+                      {s.social_url && (
+                        <a href={s.social_url} target="_blank" rel="noreferrer"
+                          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary font-ibm">
+                          <Icon name="Link" size={12} />{s.social_name || "Соцсеть"}
+                        </a>
+                      )}
+                    </div>
+
                     {s.lessons_count !== undefined && (
                       <div className="text-right flex-shrink-0">
                         <p className="font-montserrat font-bold text-sm text-foreground">{s.lessons_count}</p>
                         <p className="text-xs text-muted-foreground font-ibm">занятий</p>
                       </div>
+                    )}
+
+                    {isTeacher && (
+                      <button onClick={() => openStudent(s)}
+                        className="p-1.5 rounded-lg hover:bg-muted transition-colors flex-shrink-0">
+                        <Icon name="Pencil" size={15} className="text-muted-foreground" />
+                      </button>
                     )}
                   </div>
                 );
@@ -239,6 +321,98 @@ export default function StudentsPage({ user }: { user: User }) {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {editStudent && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-black/40" onClick={() => !sSaving && setEditStudent(null)} />
+          <div className="relative bg-card border border-border rounded-xl shadow-xl w-full max-w-md p-5 animate-scale-in max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-9 h-9 rounded-full red-accent flex items-center justify-center flex-shrink-0">
+                  <span className="text-white font-montserrat font-bold text-xs">{editStudent.avatar}</span>
+                </div>
+                <h2 className="font-montserrat font-bold text-base text-foreground truncate">Данные ученика</h2>
+              </div>
+              <button onClick={() => setEditStudent(null)} className="p-1 rounded-md hover:bg-muted transition-colors">
+                <Icon name="X" size={18} className="text-muted-foreground" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div className="grid grid-cols-3 gap-2">
+                <div className="col-span-2">
+                  <label className="text-xs font-montserrat font-bold text-muted-foreground">Имя</label>
+                  <input type="text" value={sForm.name} onChange={e => setSForm({ ...sForm, name: e.target.value })}
+                    className="mt-1 w-full px-3 py-2 rounded-lg border border-border bg-muted/30 text-sm font-ibm outline-none focus:border-primary/40" />
+                </div>
+                <div>
+                  <label className="text-xs font-montserrat font-bold text-muted-foreground">Уровень</label>
+                  <input type="text" value={sForm.level} placeholder="B1"
+                    onChange={e => setSForm({ ...sForm, level: e.target.value })}
+                    className="mt-1 w-full px-3 py-2 rounded-lg border border-border bg-muted/30 text-sm font-ibm outline-none focus:border-primary/40" />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-montserrat font-bold text-muted-foreground">
+                  Электронная почта <span className="text-red-500">*</span>
+                </label>
+                <input type="email" value={sForm.email} placeholder="ivan@mail.ru"
+                  onChange={e => { setSForm({ ...sForm, email: e.target.value }); if (sError) setSError(""); }}
+                  className={`mt-1 w-full px-3 py-2 rounded-lg border bg-muted/30 text-sm font-ibm outline-none transition-colors
+                    ${sError && !sForm.email.trim() ? "border-red-400" : "border-border focus:border-primary/40"}`} />
+              </div>
+
+              <div>
+                <label className="text-xs font-montserrat font-bold text-muted-foreground">Мобильный телефон</label>
+                <input type="tel" value={sForm.phone} placeholder="+7 900 123-45-67"
+                  onChange={e => setSForm({ ...sForm, phone: e.target.value })}
+                  className="mt-1 w-full px-3 py-2 rounded-lg border border-border bg-muted/30 text-sm font-ibm outline-none focus:border-primary/40" />
+              </div>
+
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <label className="text-xs font-montserrat font-bold text-muted-foreground">Соцсеть</label>
+                  <input type="text" value={sForm.social_name} placeholder="Telegram"
+                    onChange={e => setSForm({ ...sForm, social_name: e.target.value })}
+                    className="mt-1 w-full px-3 py-2 rounded-lg border border-border bg-muted/30 text-sm font-ibm outline-none focus:border-primary/40" />
+                </div>
+                <div className="col-span-2">
+                  <label className="text-xs font-montserrat font-bold text-muted-foreground">Ссылка на профиль</label>
+                  <input type="url" value={sForm.social_url} placeholder="https://t.me/ivan"
+                    onChange={e => setSForm({ ...sForm, social_url: e.target.value })}
+                    className="mt-1 w-full px-3 py-2 rounded-lg border border-border bg-muted/30 text-sm font-ibm outline-none focus:border-primary/40" />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-montserrat font-bold text-muted-foreground">Заметка (необязательно)</label>
+                <textarea value={sForm.note} rows={2} placeholder="Например: занимается по вторникам, готовится к экзамену"
+                  onChange={e => setSForm({ ...sForm, note: e.target.value })}
+                  className="mt-1 w-full px-3 py-2 rounded-lg border border-border bg-muted/30 text-sm font-ibm outline-none focus:border-primary/40 resize-none" />
+              </div>
+
+              {sError && (
+                <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-red-50 border border-red-200 animate-scale-in">
+                  <Icon name="TriangleAlert" size={14} className="text-red-600 flex-shrink-0 mt-0.5" />
+                  <p className="text-xs text-red-700 font-ibm">{sError}</p>
+                </div>
+              )}
+
+              <div className="flex gap-2 pt-1">
+                <button onClick={() => setEditStudent(null)} disabled={sSaving}
+                  className="flex-1 py-2 rounded-lg border border-border text-sm font-montserrat font-medium text-foreground hover:bg-muted transition-colors disabled:opacity-60">
+                  Отмена
+                </button>
+                <button onClick={handleSaveStudent} disabled={sSaving}
+                  className="flex-1 py-2 red-accent text-white rounded-lg text-sm font-montserrat font-medium hover:opacity-90 disabled:opacity-60">
+                  {sSaving ? "Сохраняю..." : "Сохранить"}
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

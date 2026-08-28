@@ -91,8 +91,11 @@ def handler(event: dict, context) -> dict:
             return get_notifications(conn, user_id)
 
         # --- Students list ---
-        if path == "students" and method == "GET":
-            return get_students(conn)
+        if path == "students":
+            if method == "GET":
+                return get_students(conn)
+            if method == "PUT":
+                return update_student(event, conn, role)
 
         # --- Groups ---
         if path == "groups":
@@ -413,15 +416,54 @@ def mark_notifications_read(conn, user_id):
 def get_students(conn):
     cur = conn.cursor()
     cur.execute(
-        """SELECT u.id, u.name, u.avatar, u.level,
+        """SELECT u.id, u.name, u.avatar, u.level, u.email,
+                  COALESCE(u.phone,''), COALESCE(u.social_name,''),
+                  COALESCE(u.social_url,''), COALESCE(u.note,''),
                   (SELECT COUNT(*) FROM lesson_students ls WHERE ls.student_id=u.id) as lessons_count
            FROM users u WHERE u.role='student' ORDER BY u.name"""
     )
     rows = cur.fetchall()
     cur.close(); conn.close()
     return resp(200, {"students": [
-        {"id": r[0], "name": r[1], "avatar": r[2], "level": r[3], "lessons_count": r[4]} for r in rows
+        {"id": r[0], "name": r[1], "avatar": r[2], "level": r[3], "email": r[4],
+         "phone": r[5], "social_name": r[6], "social_url": r[7], "note": r[8],
+         "lessons_count": r[9]} for r in rows
     ]})
+
+def update_student(event, conn, role):
+    if role != "teacher":
+        conn.close()
+        return resp(403, {"error": "Только преподаватель"})
+    body = json.loads(event.get("body") or "{}")
+    student_id = body.get("id")
+    email = (body.get("email") or "").strip()
+    if not student_id:
+        conn.close()
+        return resp(400, {"error": "id обязателен"})
+    if not email or "@" not in email:
+        conn.close()
+        return resp(400, {"error": "Укажите корректную электронную почту"})
+    cur = conn.cursor()
+    cur.execute("SELECT id FROM users WHERE email=%s AND id<>%s", (email, student_id))
+    if cur.fetchone():
+        cur.close(); conn.close()
+        return resp(400, {"error": "Эта почта уже занята другим пользователем"})
+    fields = ["email=%s", "phone=%s", "social_name=%s", "social_url=%s", "note=%s"]
+    values = [email, (body.get("phone") or "").strip(), (body.get("social_name") or "").strip(),
+              (body.get("social_url") or "").strip(), (body.get("note") or "").strip()]
+    name = (body.get("name") or "").strip()
+    if name:
+        fields.append("name=%s"); values.append(name)
+    level = body.get("level")
+    if level is not None:
+        fields.append("level=%s"); values.append(str(level).strip())
+    values.append(student_id)
+    cur.execute(f"UPDATE users SET {', '.join(fields)} WHERE id=%s AND role='student' RETURNING id", tuple(values))
+    if not cur.fetchone():
+        cur.close(); conn.close()
+        return resp(404, {"error": "Ученик не найден"})
+    conn.commit(); cur.close(); conn.close()
+    return resp(200, {"ok": True})
 
 def _group_ids(raw):
     ids = []
