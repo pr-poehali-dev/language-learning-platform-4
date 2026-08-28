@@ -200,6 +200,7 @@ export default function CalendarPage({ user }: { user: User }) {
     setSelected({ date: dateKey, time });
     if (!lesson && isTeacher) {
       setForm({ ...form, lesson_date: dateKey, lesson_time: time });
+      setFormError("");
       setShowAdd(true);
     }
   };
@@ -397,8 +398,15 @@ export default function CalendarPage({ user }: { user: User }) {
           )}
 
           {showAdd && (
-            <div className="bg-card rounded-xl border border-border p-4 space-y-3 animate-scale-in">
-              <p className="font-montserrat font-bold text-sm text-foreground">Новое занятие</p>
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="fixed inset-0 bg-black/40" onClick={() => !saving && setShowAdd(false)} />
+            <div className="relative bg-card rounded-xl border border-border p-5 space-y-3 animate-scale-in w-full max-w-md max-h-[90vh] overflow-y-auto">
+              <div className="flex items-center justify-between">
+                <p className="font-montserrat font-bold text-base text-foreground">Новое занятие</p>
+                <button onClick={() => setShowAdd(false)} className="p-1 rounded-md hover:bg-muted transition-colors">
+                  <Icon name="X" size={18} className="text-muted-foreground" />
+                </button>
+              </div>
               <input type="text" placeholder="Тема урока, например «Урок с Дашей»" value={form.topic}
                 onChange={e => { setForm({ ...form, topic: e.target.value }); if (formError) setFormError(""); }}
                 className={`w-full px-3 py-2 rounded-lg border bg-muted/30 text-sm font-ibm outline-none transition-colors
@@ -462,10 +470,17 @@ export default function CalendarPage({ user }: { user: User }) {
                   })}
                 </div>
               </div>
-              <button onClick={handleAddLesson} disabled={saving}
-                className="w-full py-2 red-accent text-white rounded-lg text-sm font-montserrat font-medium hover:opacity-90 disabled:opacity-60">
-                {saving ? "Сохраняю..." : "Сохранить"}
-              </button>
+              <div className="flex gap-2 pt-1">
+                <button onClick={() => setShowAdd(false)} disabled={saving}
+                  className="flex-1 py-2 rounded-lg border border-border text-sm font-montserrat font-medium text-foreground hover:bg-muted transition-colors disabled:opacity-60">
+                  Отмена
+                </button>
+                <button onClick={handleAddLesson} disabled={saving}
+                  className="flex-1 py-2 red-accent text-white rounded-lg text-sm font-montserrat font-medium hover:opacity-90 disabled:opacity-60">
+                  {saving ? "Сохраняю..." : "Создать занятие"}
+                </button>
+              </div>
+            </div>
             </div>
           )}
 
