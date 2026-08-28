@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import Icon from "@/components/ui/icon";
-import { apiGetCalendar, apiCreateLesson, apiMoveLesson, apiDeleteLesson, apiUpdateLesson, apiGetStudents, apiGetGroups, type Lesson, type StudentInfo, type StudentGroup } from "@/lib/api";
+import { apiGetCalendar, apiCreateLesson, apiMoveLesson, apiDeleteLesson, apiUpdateLesson, apiGetStudents, apiGetGroups, apiStartLesson, type Lesson, type StudentInfo, type StudentGroup } from "@/lib/api";
 import { type User } from "@/pages/LoginPage";
 import { buildRoomName } from "@/pages/LessonRoomPage";
 
@@ -588,7 +588,10 @@ export default function CalendarPage({ user, onJoinLesson }: { user: User; onJoi
                     </div>
                   )}
 
-                  <button onClick={() => onJoinLesson?.(buildRoomName(selectedLesson))}
+                  <button onClick={() => {
+                      if (isTeacher) apiStartLesson(selectedLesson.id).catch(() => {});
+                      onJoinLesson?.(buildRoomName(selectedLesson));
+                    }}
                     className="mt-3 w-full flex items-center justify-center gap-2 py-2 rounded-lg red-accent text-white text-sm font-montserrat font-bold hover:opacity-90 transition-opacity">
                     <Icon name="Video" size={16} />
                     Начать урок

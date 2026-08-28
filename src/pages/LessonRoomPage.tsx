@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import Icon from "@/components/ui/icon";
-import { apiGetCalendar, type Lesson } from "@/lib/api";
+import { apiGetCalendar, apiStartLesson, type Lesson } from "@/lib/api";
 import { type User } from "@/pages/LoginPage";
 
 const JITSI_HOST = "hispania-35.ru";
@@ -22,6 +22,7 @@ export default function LessonRoomPage({ user, initialRoom, onLeave }: Props) {
   const [loading, setLoading] = useState(true);
   const [room, setRoom] = useState<string | null>(initialRoom || null);
   const [customRoom, setCustomRoom] = useState("");
+  const [notice, setNotice] = useState("");
   const frameRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -50,6 +51,23 @@ export default function LessonRoomPage({ user, initialRoom, onLeave }: Props) {
   const startLesson = (lesson?: Lesson) => {
     setRoom(buildRoomName(lesson));
     setTimeout(() => frameRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
+    if (lesson && user.role === "teacher") {
+      setNotice("Отправляю приглашения ученикам...");
+      apiStartLesson(lesson.id)
+        .then(res => {
+          if (res.ok) {
+            const mails = res.emails_sent || 0;
+            setNotice(
+              `Уведомления отправлены: ${res.notified || 0} в чат` +
+              (mails > 0 ? `, ${mails} на почту` : ", почта не настроена")
+            );
+          } else {
+            setNotice(res.error || "Не удалось отправить приглашения");
+          }
+        })
+        .catch(() => setNotice("Не удалось отправить приглашения"))
+        .finally(() => setTimeout(() => setNotice(""), 6000));
+    }
   };
 
   const startCustom = () => {
@@ -88,6 +106,13 @@ export default function LessonRoomPage({ user, initialRoom, onLeave }: Props) {
             </button>
           </div>
         </div>
+
+        {notice && (
+          <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-primary/10 border border-primary/20 animate-scale-in">
+            <Icon name="BellRing" size={15} className="text-primary flex-shrink-0" />
+            <p className="text-xs text-foreground font-ibm">{notice}</p>
+          </div>
+        )}
 
         <div className="bg-card rounded-xl border border-border overflow-hidden">
           <iframe

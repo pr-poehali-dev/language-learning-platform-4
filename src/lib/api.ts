@@ -92,6 +92,14 @@ export async function apiGetStudents() {
   return r.data as { students?: StudentInfo[]; error?: string };
 }
 
+export async function apiStartLesson(lessonId: number) {
+  const r = await request(API_URL + "?p=lesson_start", {
+    method: "POST",
+    body: JSON.stringify({ lesson_id: lessonId }),
+  });
+  return r.data as { ok?: boolean; room_url?: string; notified?: number; emails_sent?: number; error?: string };
+}
+
 export async function apiUpdateStudent(data: {
   id: number;
   email: string;

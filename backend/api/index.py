@@ -13,7 +13,19 @@ GET  /leaderboard           — рейтинг
 """
 import json
 import os
+from datetime import datetime, timedelta
 import psycopg2
+from mailer import send_email, lesson_started_email, lesson_reminder_email
+
+JITSI_HOST = "hispania-35.ru"
+MONTHS_RU = ["января", "февраля", "марта", "апреля", "мая", "июня",
+             "июля", "августа", "сентября", "октября", "ноября", "декабря"]
+
+def room_url(lesson_id):
+    return f"https://{JITSI_HOST}/hispania-lesson-{lesson_id}"
+
+def ru_date(d):
+    return f"{d.day} {MONTHS_RU[d.month - 1]}"
 
 CORS = {
     "Access-Control-Allow-Origin": "*",
@@ -45,6 +57,10 @@ def resp(status, data):
 def handler(event: dict, context) -> dict:
     if event.get("httpMethod") == "OPTIONS":
         return {"statusCode": 200, "headers": CORS, "body": ""}
+
+    params_pre = event.get("queryStringParameters") or {}
+    if params_pre.get("p") == "reminders":
+        return send_reminders(get_conn())
 
     token = event.get("headers", {}).get("X-Auth-Token", "")
     conn = get_conn()
@@ -89,6 +105,10 @@ def handler(event: dict, context) -> dict:
             return mark_notifications_read(conn, user_id)
         if path == "notifications" and method == "GET":
             return get_notifications(conn, user_id)
+
+        # --- Start lesson (video) ---
+        if path == "lesson_start" and method == "POST":
+            return start_lesson(event, conn, user_id, role)
 
         # --- Students list ---
         if path == "students":
@@ -412,6 +432,116 @@ def mark_notifications_read(conn, user_id):
 
 
 # ── Students / Leaderboard ─────────────────────────────────────────────────────
+
+def start_lesson(event, conn, user_id, role):
+    if role != "teacher":
+        conn.close()
+        return resp(403, {"error": "Только преподаватель"})
+    body = json.loads(event.get("body") or "{}")
+    lesson_id = body.get("lesson_id")
+    if not lesson_id:
+        conn.close()
+        return resp(400, {"error": "lesson_id обязателен"})
+
+    cur = conn.cursor()
+    cur.execute("SELECT topic, title, lesson_time FROM lessons WHERE id=%s", (lesson_id,))
+    row = cur.fetchone()
+    if not row:
+        cur.close(); conn.close()
+        return resp(404, {"error": "Занятие не найдено"})
+    topic = row[0] or row[1]
+
+    cur.execute(
+        """SELECT u.id, u.name, u.email FROM lesson_students ls
+           JOIN users u ON u.id=ls.student_id WHERE ls.lesson_id=%s""",
+        (lesson_id,)
+    )
+    students = cur.fetchall()
+    url = room_url(lesson_id)
+    sent = 0
+
+    for sid, sname, semail in students:
+        cur.execute(
+            "INSERT INTO notifications (user_id, text, type) VALUES (%s,%s,'calendar')",
+            (sid, f"Урок «{topic}» начался — подключайтесь: {url}")
+        )
+        cur.execute(
+            "INSERT INTO messages (from_user_id, to_user_id, text) VALUES (%s,%s,%s)",
+            (user_id, sid, f"Урок «{topic}» начался. Подключайтесь: {url}")
+        )
+        if send_email(semail, f"Урок «{topic}» начался",
+                      lesson_started_email(sname, topic, url)):
+            sent += 1
+
+    conn.commit(); cur.close(); conn.close()
+    return resp(200, {"ok": True, "room_url": url, "notified": len(students), "emails_sent": sent})
+
+def send_reminders(conn):
+    """Напоминания за 3 часа. Для уроков до 11:00 — вечером накануне в 20:00."""
+    cur = conn.cursor()
+    now = datetime.utcnow() + timedelta(hours=3)
+    today = now.date()
+    tomorrow = today + timedelta(days=1)
+
+    cur.execute(
+        """SELECT l.id, COALESCE(l.topic, l.title), l.lesson_date, l.lesson_time, l.teacher_id
+           FROM lessons l WHERE l.lesson_date IN (%s, %s)""",
+        (today, tomorrow)
+    )
+    lessons = cur.fetchall()
+    result = []
+
+    for lesson_id, topic, l_date, l_time, teacher_id in lessons:
+        hour = l_time.hour
+        early = hour < 11
+
+        if early:
+            if not (l_date == tomorrow and now.hour == 20):
+                continue
+            kind = "evening"
+            hours_text = "завтра утром"
+        else:
+            start = datetime.combine(l_date, l_time)
+            delta = (start - now).total_seconds() / 3600
+            if not (2.5 <= delta <= 3.5):
+                continue
+            kind = "3h"
+            hours_text = "через 3 часа"
+
+        cur.execute(
+            """SELECT u.id, u.name, u.email FROM lesson_students ls
+               JOIN users u ON u.id=ls.student_id WHERE ls.lesson_id=%s""",
+            (lesson_id,)
+        )
+        url = room_url(lesson_id)
+        time_str = l_time.strftime("%H:%M")
+        date_str = ru_date(l_date)
+
+        for sid, sname, semail in cur.fetchall():
+            cur.execute(
+                "SELECT id FROM lesson_reminders WHERE lesson_id=%s AND student_id=%s AND kind=%s",
+                (lesson_id, sid, kind)
+            )
+            if cur.fetchone():
+                continue
+            cur.execute(
+                "INSERT INTO notifications (user_id, text, type) VALUES (%s,%s,'calendar')",
+                (sid, f"Напоминание: {hours_text} занятие «{topic}» в {time_str}")
+            )
+            cur.execute(
+                "INSERT INTO messages (from_user_id, to_user_id, text) VALUES (%s,%s,%s)",
+                (teacher_id, sid, f"Напоминание: {hours_text} урок «{topic}» ({date_str}, {time_str}). Ссылка: {url}")
+            )
+            send_email(semail, f"Напоминание: урок «{topic}» {hours_text}",
+                       lesson_reminder_email(sname, topic, time_str, date_str, url, hours_text))
+            cur.execute(
+                "INSERT INTO lesson_reminders (lesson_id, student_id, kind) VALUES (%s,%s,%s)",
+                (lesson_id, sid, kind)
+            )
+            result.append({"lesson_id": lesson_id, "student_id": sid, "kind": kind})
+
+    conn.commit(); cur.close(); conn.close()
+    return resp(200, {"ok": True, "sent": len(result), "details": result})
 
 def get_students(conn):
     cur = conn.cursor()
