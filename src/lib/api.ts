@@ -223,6 +223,12 @@ export interface CreateMaterialData {
   file_url?: string;
 }
 
+export interface LessonStudent {
+  id: number;
+  name: string;
+  avatar: string;
+}
+
 export interface Lesson {
   id: number;
   title: string;
@@ -231,6 +237,7 @@ export interface Lesson {
   lesson_time: string;
   duration_min: number;
   lesson_type: string;
+  students?: LessonStudent[];
 }
 
 export interface CreateLessonData {
@@ -240,6 +247,7 @@ export interface CreateLessonData {
   title?: string;
   duration_min?: number;
   lesson_type?: string;
+  student_ids?: number[];
 }
 
 export interface ChatMessage {

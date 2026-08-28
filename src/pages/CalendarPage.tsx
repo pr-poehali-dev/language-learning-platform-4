@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import Icon from "@/components/ui/icon";
-import { apiGetCalendar, apiCreateLesson, apiMoveLesson, apiDeleteLesson, type Lesson, type User } from "@/lib/api";
+import { apiGetCalendar, apiCreateLesson, apiMoveLesson, apiDeleteLesson, apiGetStudents, type Lesson, type StudentInfo, type User } from "@/lib/api";
 
 const DAYS = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"];
 const MONTHS_GEN = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"];
@@ -46,13 +46,18 @@ export default function CalendarPage({ user }: { user: User }) {
   const [confirmDelete, setConfirmDelete] = useState<Lesson | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [formError, setFormError] = useState("");
+  const [students, setStudents] = useState<StudentInfo[]>([]);
+  const [selectedStudents, setSelectedStudents] = useState<number[]>([]);
 
   useEffect(() => {
     apiGetCalendar()
       .then(res => { if (res.lessons) setLessons(res.lessons); })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, []);
+    if (isTeacher) {
+      apiGetStudents().then(res => { if (res.students) setStudents(res.students); }).catch(() => {});
+    }
+  }, [isTeacher]);
 
   const weekDays = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(weekStart);
@@ -160,15 +165,20 @@ export default function CalendarPage({ user }: { user: User }) {
       setFormError("Укажите время занятия");
       return;
     }
+    if (selectedStudents.length === 0) {
+      setFormError("Выберите ученика или группу учеников");
+      return;
+    }
     setFormError("");
     setSaving(true);
     try {
-      const res = await apiCreateLesson(form);
+      const res = await apiCreateLesson({ ...form, student_ids: selectedStudents });
       if (res.ok) {
         const updated = await apiGetCalendar();
         if (updated.lessons) setLessons(updated.lessons);
         setShowAdd(false);
         setForm({ topic: "", lesson_date: "", lesson_time: "18:00", duration_min: 60, lesson_type: "Грамматика" });
+        setSelectedStudents([]);
       } else {
         setFormError(res.error || "Не удалось сохранить занятие");
       }
@@ -354,6 +364,48 @@ export default function CalendarPage({ user }: { user: User }) {
                 className="w-full px-3 py-2 rounded-lg border border-border bg-muted/30 text-sm font-ibm outline-none focus:border-primary/40">
                 {lessonTypes.map(t => <option key={t}>{t}</option>)}
               </select>
+
+              <div className={`rounded-lg border ${formError && selectedStudents.length === 0 ? "border-red-400" : "border-border"}`}>
+                <div className="flex items-center justify-between px-3 py-2 border-b border-border">
+                  <p className="text-xs font-montserrat font-bold text-foreground">
+                    Ученики {selectedStudents.length > 0 && <span className="text-primary">· {selectedStudents.length}</span>}
+                  </p>
+                  <button type="button"
+                    onClick={() => {
+                      setSelectedStudents(selectedStudents.length === students.length ? [] : students.map(s => s.id));
+                      if (formError) setFormError("");
+                    }}
+                    className="text-xs font-montserrat font-medium text-primary hover:underline">
+                    {selectedStudents.length === students.length && students.length > 0 ? "Снять всех" : "Вся группа"}
+                  </button>
+                </div>
+                <div className="max-h-40 overflow-y-auto p-1.5 space-y-1">
+                  {students.length === 0 ? (
+                    <p className="px-2 py-3 text-xs text-muted-foreground font-ibm text-center">Учеников пока нет</p>
+                  ) : students.map(s => {
+                    const checked = selectedStudents.includes(s.id);
+                    return (
+                      <button type="button" key={s.id}
+                        onClick={() => {
+                          setSelectedStudents(checked ? selectedStudents.filter(id => id !== s.id) : [...selectedStudents, s.id]);
+                          if (formError) setFormError("");
+                        }}
+                        className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left transition-colors
+                          ${checked ? "bg-primary/10" : "hover:bg-muted"}`}>
+                        <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0
+                          ${checked ? "bg-primary border-primary" : "border-border"}`}>
+                          {checked && <Icon name="Check" size={11} className="text-white" />}
+                        </div>
+                        <div className="w-6 h-6 rounded-full red-accent flex items-center justify-center flex-shrink-0">
+                          <span className="text-white font-montserrat font-bold text-[10px]">{s.avatar}</span>
+                        </div>
+                        <span className="text-xs font-ibm text-foreground truncate flex-1">{s.name}</span>
+                        {s.level && <span className="text-[10px] text-muted-foreground">{s.level}</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
               <button onClick={handleAddLesson} disabled={saving}
                 className="w-full py-2 red-accent text-white rounded-lg text-sm font-montserrat font-medium hover:opacity-90 disabled:opacity-60">
                 {saving ? "Сохраняю..." : "Сохранить"}
@@ -379,6 +431,24 @@ export default function CalendarPage({ user }: { user: User }) {
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
                     <Icon name="Clock" size={13} /><span className="font-ibm">{selectedLesson.duration_min} минут</span>
                   </div>
+
+                  {selectedLesson.students && selectedLesson.students.length > 0 && (
+                    <div className="mt-3 pt-3 border-t border-border">
+                      <p className="text-xs text-muted-foreground font-ibm mb-2">
+                        {selectedLesson.students.length === 1 ? "Ученик" : `Ученики · ${selectedLesson.students.length}`}
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {selectedLesson.students.map(s => (
+                          <span key={s.id} className="flex items-center gap-1.5 pl-1 pr-2 py-1 rounded-full bg-muted">
+                            <span className="w-5 h-5 rounded-full red-accent flex items-center justify-center">
+                              <span className="text-white font-montserrat font-bold text-[9px]">{s.avatar}</span>
+                            </span>
+                            <span className="text-xs font-ibm text-foreground">{s.name}</span>
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   {isTeacher && (
                     <div className="mt-3 flex items-center gap-2">

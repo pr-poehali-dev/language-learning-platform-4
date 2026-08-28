@@ -167,7 +167,6 @@ def get_lessons(conn, user_id, role):
         )
     rows = cur.fetchall()
     cols = [d[0] for d in cur.description]
-    cur.close(); conn.close()
     result = []
     for row in rows:
         item = dict(zip(cols, row))
@@ -175,7 +174,22 @@ def get_lessons(conn, user_id, role):
             item["lesson_date"] = item["lesson_date"].strftime("%Y-%m-%d")
         if item.get("lesson_time"):
             item["lesson_time"] = str(item["lesson_time"])[:5]
+        item["students"] = []
         result.append(item)
+
+    if result:
+        by_id = {r["id"]: r for r in result}
+        id_list = ",".join(str(i) for i in by_id.keys())
+        cur.execute(
+            f"""SELECT ls.lesson_id, u.id, u.name, u.avatar
+                FROM lesson_students ls JOIN users u ON u.id=ls.student_id
+                WHERE ls.lesson_id IN ({id_list}) ORDER BY u.name"""
+        )
+        for lid, sid, sname, savatar in cur.fetchall():
+            if lid in by_id:
+                by_id[lid]["students"].append({"id": sid, "name": sname, "avatar": savatar})
+
+    cur.close(); conn.close()
     return resp(200, {"lessons": result})
 
 def create_lesson(event, conn, user_id, role):
@@ -197,7 +211,18 @@ def create_lesson(event, conn, user_id, role):
          body.get("duration_min", 60), body.get("lesson_type", "Грамматика"))
     )
     lesson_id = cur.fetchone()[0]
-    cur.execute("SELECT id FROM users WHERE role='student'")
+    raw_ids = body.get("student_ids") or []
+    student_ids = []
+    for s in raw_ids:
+        try:
+            student_ids.append(int(s))
+        except (TypeError, ValueError):
+            pass
+    if student_ids:
+        id_list = ",".join(str(i) for i in student_ids)
+        cur.execute(f"SELECT id FROM users WHERE role='student' AND id IN ({id_list})")
+    else:
+        cur.execute("SELECT id FROM users WHERE role='student'")
     for (sid,) in cur.fetchall():
         cur.execute("INSERT INTO lesson_students (lesson_id, student_id) VALUES (%s,%s)", (lesson_id, sid))
         cur.execute("INSERT INTO notifications (user_id, text, type) VALUES (%s,%s,'calendar')",
