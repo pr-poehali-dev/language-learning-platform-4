@@ -45,6 +45,7 @@ export default function CalendarPage({ user }: { user: User }) {
   const [moveStatus, setMoveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [confirmDelete, setConfirmDelete] = useState<Lesson | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [formError, setFormError] = useState("");
 
   useEffect(() => {
     apiGetCalendar()
@@ -147,7 +148,19 @@ export default function CalendarPage({ user }: { user: User }) {
   };
 
   const handleAddLesson = async () => {
-    if (!form.topic || !form.lesson_date || !form.lesson_time) return;
+    if (!form.topic.trim()) {
+      setFormError("Заполните тему урока — например «Урок с Дашей»");
+      return;
+    }
+    if (!form.lesson_date) {
+      setFormError("Выберите дату занятия");
+      return;
+    }
+    if (!form.lesson_time) {
+      setFormError("Укажите время занятия");
+      return;
+    }
+    setFormError("");
     setSaving(true);
     try {
       const res = await apiCreateLesson(form);
@@ -156,9 +169,11 @@ export default function CalendarPage({ user }: { user: User }) {
         if (updated.lessons) setLessons(updated.lessons);
         setShowAdd(false);
         setForm({ topic: "", lesson_date: "", lesson_time: "18:00", duration_min: 60, lesson_type: "Грамматика" });
+      } else {
+        setFormError(res.error || "Не удалось сохранить занятие");
       }
     } catch {
-      // сетевая ошибка — просто разблокируем кнопку
+      setFormError("Нет связи с сервером, попробуйте ещё раз");
     } finally {
       setSaving(false);
     }
@@ -308,7 +323,7 @@ export default function CalendarPage({ user }: { user: User }) {
         {/* Details */}
         <div className="lg:col-span-2 space-y-3">
           {isTeacher && (
-            <button onClick={() => setShowAdd(!showAdd)}
+            <button onClick={() => { setShowAdd(!showAdd); setFormError(""); }}
               className="w-full flex items-center justify-center gap-2 py-2.5 red-accent text-white rounded-xl text-sm font-montserrat font-medium hover:opacity-90 transition-opacity">
               <Icon name="Plus" size={16} />
               Добавить занятие
@@ -318,9 +333,17 @@ export default function CalendarPage({ user }: { user: User }) {
           {showAdd && (
             <div className="bg-card rounded-xl border border-border p-4 space-y-3 animate-scale-in">
               <p className="font-montserrat font-bold text-sm text-foreground">Новое занятие</p>
-              <input type="text" placeholder="Тема урока" value={form.topic}
-                onChange={e => setForm({ ...form, topic: e.target.value })}
-                className="w-full px-3 py-2 rounded-lg border border-border bg-muted/30 text-sm font-ibm outline-none focus:border-primary/40" />
+              <input type="text" placeholder="Тема урока, например «Урок с Дашей»" value={form.topic}
+                onChange={e => { setForm({ ...form, topic: e.target.value }); if (formError) setFormError(""); }}
+                className={`w-full px-3 py-2 rounded-lg border bg-muted/30 text-sm font-ibm outline-none transition-colors
+                  ${formError && !form.topic.trim() ? "border-red-400 focus:border-red-500" : "border-border focus:border-primary/40"}`} />
+
+              {formError && (
+                <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-red-50 border border-red-200 animate-scale-in">
+                  <Icon name="TriangleAlert" size={14} className="text-red-600 flex-shrink-0 mt-0.5" />
+                  <p className="text-xs text-red-700 font-ibm">{formError}</p>
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-2">
                 <input type="date" value={form.lesson_date} onChange={e => setForm({ ...form, lesson_date: e.target.value })}
                   className="px-3 py-2 rounded-lg border border-border bg-muted/30 text-sm font-ibm outline-none focus:border-primary/40" />
