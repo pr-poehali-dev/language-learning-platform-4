@@ -119,6 +119,11 @@ export async function apiMoveLesson(data: { id: number; lesson_date: string; les
   return r.data as { ok?: boolean; error?: string };
 }
 
+export async function apiDeleteLesson(id: number) {
+  const r = await request(`${API_URL}?p=calendar&id=${id}`, { method: "DELETE", body: JSON.stringify({ id }) });
+  return r.data as { ok?: boolean; error?: string };
+}
+
 export async function apiGetMessages(withUserId?: number) {
   const url = withUserId ? `${API_URL}?p=chat&with=${withUserId}` : `${API_URL}?p=chat`;
   const r = await request(url);

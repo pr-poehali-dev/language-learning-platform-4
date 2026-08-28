@@ -74,6 +74,8 @@ def handler(event: dict, context) -> dict:
                 return create_lesson(event, conn, user_id, role)
             if method == "PUT":
                 return move_lesson(event, conn, user_id, role)
+            if method == "DELETE":
+                return delete_lesson(event, conn, user_id, role)
 
         # --- Chat ---
         if path == "chat":
@@ -228,6 +230,34 @@ def move_lesson(event, conn, user_id, role):
     for (sid,) in cur.fetchall():
         cur.execute("INSERT INTO notifications (user_id, text, type) VALUES (%s,%s,'calendar')",
                     (sid, f"Занятие перенесено на {lesson_date} {lesson_time}: {topic}"))
+    conn.commit(); cur.close(); conn.close()
+    return resp(200, {"ok": True})
+
+def delete_lesson(event, conn, user_id, role):
+    if role != "teacher":
+        conn.close()
+        return resp(403, {"error": "Только преподаватель"})
+    params = event.get("queryStringParameters") or {}
+    body = json.loads(event.get("body") or "{}")
+    lesson_id = body.get("id") or params.get("id")
+    if not lesson_id:
+        conn.close()
+        return resp(400, {"error": "id обязателен"})
+    cur = conn.cursor()
+    cur.execute("SELECT topic, lesson_date, lesson_time FROM lessons WHERE id=%s AND teacher_id=%s",
+                (lesson_id, user_id))
+    row = cur.fetchone()
+    if not row:
+        cur.close(); conn.close()
+        return resp(404, {"error": "Занятие не найдено"})
+    topic, l_date, l_time = row
+    cur.execute("SELECT student_id FROM lesson_students WHERE lesson_id=%s", (lesson_id,))
+    student_ids = [r[0] for r in cur.fetchall()]
+    cur.execute("DELETE FROM lesson_students WHERE lesson_id=%s", (lesson_id,))
+    cur.execute("DELETE FROM lessons WHERE id=%s AND teacher_id=%s", (lesson_id, user_id))
+    for sid in student_ids:
+        cur.execute("INSERT INTO notifications (user_id, text, type) VALUES (%s,%s,'calendar')",
+                    (sid, f"Занятие отменено {l_date} {str(l_time)[:5]}: {topic}"))
     conn.commit(); cur.close(); conn.close()
     return resp(200, {"ok": True})
 

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import Icon from "@/components/ui/icon";
-import { apiGetCalendar, apiCreateLesson, apiMoveLesson, type Lesson, type User } from "@/lib/api";
+import { apiGetCalendar, apiCreateLesson, apiMoveLesson, apiDeleteLesson, type Lesson, type User } from "@/lib/api";
 
 const DAYS = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"];
 const MONTHS_GEN = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"];
@@ -43,6 +43,8 @@ export default function CalendarPage({ user }: { user: User }) {
   const [dragId, setDragId] = useState<number | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [moveStatus, setMoveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [confirmDelete, setConfirmDelete] = useState<Lesson | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     apiGetCalendar()
@@ -113,6 +115,28 @@ export default function CalendarPage({ user }: { user: User }) {
     moveLesson(lesson.id, lesson.lesson_date, TIME_SLOTS[next]);
   };
 
+  const handleDeleteLesson = async () => {
+    if (!confirmDelete) return;
+    setDeleting(true);
+    const prev = lessons;
+    try {
+      const res = await apiDeleteLesson(confirmDelete.id);
+      if (res.ok) {
+        setLessons(prev.filter(l => l.id !== confirmDelete.id));
+        setSelected(null);
+        setConfirmDelete(null);
+      } else {
+        setMoveStatus("error");
+        setTimeout(() => setMoveStatus("idle"), 2500);
+      }
+    } catch {
+      setMoveStatus("error");
+      setTimeout(() => setMoveStatus("idle"), 2500);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const handleSlotClick = (dateKey: string, time: string) => {
     const lesson = findLesson(dateKey, time);
     setSelected({ date: dateKey, time });
@@ -181,7 +205,7 @@ export default function CalendarPage({ user }: { user: User }) {
               ) : moveStatus === "error" ? (
                 <span className="flex items-center gap-1.5 text-red-600"><Icon name="TriangleAlert" size={13} />Не удалось перенести</span>
               ) : (
-                <span className="flex items-center gap-1.5 text-muted-foreground"><Icon name="Move" size={13} />Перетащите занятие мышкой или двигайте стрелками</span>
+                <span className="flex items-center gap-1.5 text-muted-foreground"><Icon name="Move" size={13} />Перетащите занятие мышкой, стрелки — сдвиг, правый клик — удалить</span>
               )}
             </div>
           )}
@@ -236,6 +260,9 @@ export default function CalendarPage({ user }: { user: User }) {
                               onDragStart={() => lesson && setDragId(lesson.id)}
                               onDragEnd={() => { setDragId(null); setDropTarget(null); }}
                               onClick={() => handleSlotClick(dateKey, time)}
+                              onContextMenu={e => {
+                                if (isTeacher && lesson) { e.preventDefault(); setConfirmDelete(lesson); }
+                              }}
                               className={`w-full h-12 rounded-md text-xs font-montserrat font-bold transition-all duration-150 flex flex-col items-center justify-center gap-0.5 px-1
                                 ${lesson
                                   ? "bg-orange-300 text-orange-900 hover:bg-orange-400 cursor-grab active:cursor-grabbing"
@@ -348,6 +375,14 @@ export default function CalendarPage({ user }: { user: User }) {
                   <button className="mt-3 w-full py-2 rounded-lg border border-primary text-primary text-sm font-montserrat font-medium hover:bg-primary hover:text-white transition-colors">
                     Присоединиться к уроку
                   </button>
+
+                  {isTeacher && (
+                    <button onClick={() => setConfirmDelete(selectedLesson)}
+                      className="mt-2 w-full flex items-center justify-center gap-1.5 py-2 rounded-lg border border-red-200 text-red-600 text-sm font-montserrat font-medium hover:bg-red-50 transition-colors">
+                      <Icon name="Trash2" size={14} />
+                      Удалить занятие
+                    </button>
+                  )}
                 </div>
               ) : (
                 <div className="bg-card rounded-xl border border-border p-6 text-center">
@@ -414,6 +449,34 @@ export default function CalendarPage({ user }: { user: User }) {
           </div>
         </div>
       </div>
+
+      {confirmDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-black/40" onClick={() => !deleting && setConfirmDelete(null)} />
+          <div className="relative bg-card border border-border rounded-xl shadow-xl w-full max-w-sm p-5 animate-scale-in">
+            <div className="w-11 h-11 rounded-full bg-red-50 flex items-center justify-center mb-3">
+              <Icon name="TriangleAlert" size={22} className="text-red-600" />
+            </div>
+            <h2 className="font-montserrat font-bold text-base text-foreground mb-1.5">Удалить занятие?</h2>
+            <p className="text-sm text-muted-foreground font-ibm mb-1">
+              «{confirmDelete.topic}»
+            </p>
+            <p className="text-sm text-muted-foreground font-ibm mb-4">
+              {new Date(confirmDelete.lesson_date + "T12:00:00").toLocaleDateString("ru-RU", { day: "numeric", month: "long" })} в {confirmDelete.lesson_time.slice(0, 5)}. Ученики получат уведомление об отмене. Действие нельзя отменить.
+            </p>
+            <div className="flex gap-2">
+              <button onClick={() => setConfirmDelete(null)} disabled={deleting}
+                className="flex-1 py-2 rounded-lg border border-border text-sm font-montserrat font-medium text-foreground hover:bg-muted transition-colors disabled:opacity-60">
+                Отмена
+              </button>
+              <button onClick={handleDeleteLesson} disabled={deleting}
+                className="flex-1 py-2 rounded-lg bg-red-600 text-white text-sm font-montserrat font-medium hover:bg-red-700 transition-colors disabled:opacity-60">
+                {deleting ? "Удаляю..." : "Удалить"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
