@@ -5,7 +5,7 @@ import { apiGetCalendar, apiCreateLesson, apiMoveLesson, type Lesson, type User 
 const DAYS = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"];
 const MONTHS_GEN = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"];
 
-const TIME_SLOTS = ["10:00", "12:00", "14:00", "16:00", "18:00"];
+const DEFAULT_SLOTS = ["10:00", "12:00", "14:00", "16:00", "18:00"];
 
 const typeColors: Record<string, string> = {
   "Грамматика": "bg-primary/15 text-primary border-primary/20",
@@ -59,6 +59,13 @@ export default function CalendarPage({ user }: { user: User }) {
 
   const weekEnd = weekDays[6];
   const isCurrentWeek = toKey(weekStart) === toKey(currentMonday);
+
+  const weekFrom = toKey(weekStart);
+  const weekTo = toKey(weekEnd);
+  const weekLessonTimes = lessons
+    .filter(l => l.lesson_date >= weekFrom && l.lesson_date <= weekTo)
+    .map(l => l.lesson_time.slice(0, 5));
+  const TIME_SLOTS = Array.from(new Set([...DEFAULT_SLOTS, ...weekLessonTimes])).sort();
 
   const shiftWeek = (delta: number) => {
     const d = new Date(weekStart);
@@ -290,10 +297,8 @@ export default function CalendarPage({ user }: { user: User }) {
               <div className="grid grid-cols-2 gap-2">
                 <input type="date" value={form.lesson_date} onChange={e => setForm({ ...form, lesson_date: e.target.value })}
                   className="px-3 py-2 rounded-lg border border-border bg-muted/30 text-sm font-ibm outline-none focus:border-primary/40" />
-                <select value={form.lesson_time} onChange={e => setForm({ ...form, lesson_time: e.target.value })}
-                  className="px-3 py-2 rounded-lg border border-border bg-muted/30 text-sm font-ibm outline-none focus:border-primary/40">
-                  {TIME_SLOTS.map(t => <option key={t}>{t}</option>)}
-                </select>
+                <input type="time" value={form.lesson_time} onChange={e => setForm({ ...form, lesson_time: e.target.value })}
+                  className="px-3 py-2 rounded-lg border border-border bg-muted/30 text-sm font-ibm outline-none focus:border-primary/40" />
               </div>
               <select value={form.lesson_type} onChange={e => setForm({ ...form, lesson_type: e.target.value })}
                 className="w-full px-3 py-2 rounded-lg border border-border bg-muted/30 text-sm font-ibm outline-none focus:border-primary/40">
