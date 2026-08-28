@@ -114,6 +114,26 @@ export async function apiCreateLesson(data: CreateLessonData) {
   return r.data as { ok?: boolean; id?: number; error?: string };
 }
 
+export async function apiGetGroups() {
+  const r = await request(API_URL + "?p=groups");
+  return r.data as { groups?: StudentGroup[]; error?: string };
+}
+
+export async function apiCreateGroup(data: GroupData) {
+  const r = await request(API_URL + "?p=groups", { method: "POST", body: JSON.stringify(data) });
+  return r.data as { ok?: boolean; id?: number; error?: string };
+}
+
+export async function apiUpdateGroup(data: GroupData) {
+  const r = await request(API_URL + "?p=groups", { method: "PUT", body: JSON.stringify(data) });
+  return r.data as { ok?: boolean; error?: string };
+}
+
+export async function apiDeleteGroup(id: number) {
+  const r = await request(`${API_URL}?p=groups&id=${id}`, { method: "DELETE", body: JSON.stringify({ id }) });
+  return r.data as { ok?: boolean; error?: string };
+}
+
 export async function apiUpdateLesson(data: {
   id: number;
   lesson_date: string;
@@ -213,6 +233,23 @@ export interface StudentInfo {
   name: string;
   avatar: string;
   level?: string;
+  lessons_count?: number;
+}
+
+export interface StudentGroup {
+  id: number;
+  name: string;
+  description: string;
+  color: string;
+  students: StudentInfo[];
+}
+
+export interface GroupData {
+  id?: number;
+  name: string;
+  description?: string;
+  color?: string;
+  student_ids?: number[];
 }
 
 export interface Material {

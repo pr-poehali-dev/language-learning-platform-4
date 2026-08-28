@@ -15,6 +15,7 @@ const teacherNav = [
   { id: "calendar" as Page, label: "Расписание", icon: "CalendarDays" },
   { id: "materials" as Page, label: "Материалы", icon: "BookOpen" },
   { id: "homework" as Page, label: "Проверка заданий", icon: "ClipboardCheck", badge: 2 },
+  { id: "students" as Page, label: "Ученики и группы", icon: "Users" },
   { id: "profile" as Page, label: "Профиль", icon: "UserCircle" },
 ];
 

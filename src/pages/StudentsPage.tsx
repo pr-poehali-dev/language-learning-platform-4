@@ -1,0 +1,377 @@
+import { useState, useEffect } from "react";
+import Icon from "@/components/ui/icon";
+import {
+  apiGetStudents, apiGetGroups, apiCreateGroup, apiUpdateGroup, apiDeleteGroup,
+  type StudentInfo, type StudentGroup,
+} from "@/lib/api";
+import { type User } from "@/pages/LoginPage";
+
+const GROUP_COLORS = [
+  { key: "primary", dot: "bg-primary", soft: "bg-primary/10 text-primary" },
+  { key: "green", dot: "bg-green-500", soft: "bg-green-100 text-green-700" },
+  { key: "blue", dot: "bg-blue-500", soft: "bg-blue-100 text-blue-700" },
+  { key: "purple", dot: "bg-purple-500", soft: "bg-purple-100 text-purple-700" },
+  { key: "orange", dot: "bg-orange-400", soft: "bg-orange-100 text-orange-700" },
+];
+
+const colorOf = (key: string) => GROUP_COLORS.find(c => c.key === key) || GROUP_COLORS[0];
+
+export default function StudentsPage({ user }: { user: User }) {
+  const isTeacher = user.role === "teacher";
+  const [tab, setTab] = useState<"students" | "groups">("students");
+  const [students, setStudents] = useState<StudentInfo[]>([]);
+  const [groups, setGroups] = useState<StudentGroup[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+
+  const [editor, setEditor] = useState<StudentGroup | "new" | null>(null);
+  const [form, setForm] = useState({ name: "", description: "", color: "primary" });
+  const [formStudents, setFormStudents] = useState<number[]>([]);
+  const [formError, setFormError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState<StudentGroup | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const loadAll = () => {
+    Promise.all([apiGetStudents(), isTeacher ? apiGetGroups() : Promise.resolve({ groups: [] })])
+      .then(([s, g]) => {
+        if (s.students) setStudents(s.students);
+        if (g.groups) setGroups(g.groups);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(loadAll, [isTeacher]);
+
+  const filtered = students.filter(s => s.name.toLowerCase().includes(search.toLowerCase()));
+
+  const groupsOf = (studentId: number) =>
+    groups.filter(g => g.students.some(s => s.id === studentId));
+
+  const openNew = () => {
+    setEditor("new");
+    setForm({ name: "", description: "", color: "primary" });
+    setFormStudents([]);
+    setFormError("");
+  };
+
+  const openEdit = (g: StudentGroup) => {
+    setEditor(g);
+    setForm({ name: g.name, description: g.description, color: g.color });
+    setFormStudents(g.students.map(s => s.id));
+    setFormError("");
+  };
+
+  const handleSave = async () => {
+    if (!form.name.trim()) { setFormError("Укажите название группы, например «Начинающие»"); return; }
+    if (formStudents.length === 0) { setFormError("Добавьте хотя бы одного ученика"); return; }
+    setFormError("");
+    setSaving(true);
+    try {
+      const payload = {
+        name: form.name.trim(),
+        description: form.description.trim(),
+        color: form.color,
+        student_ids: formStudents,
+      };
+      const res = editor === "new"
+        ? await apiCreateGroup(payload)
+        : await apiUpdateGroup({ ...payload, id: (editor as StudentGroup).id });
+      if (res.ok) {
+        const g = await apiGetGroups();
+        if (g.groups) setGroups(g.groups);
+        setEditor(null);
+      } else {
+        setFormError(res.error || "Не удалось сохранить группу");
+      }
+    } catch {
+      setFormError("Нет связи с сервером, попробуйте ещё раз");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!confirmDelete) return;
+    setDeleting(true);
+    try {
+      const res = await apiDeleteGroup(confirmDelete.id);
+      if (res.ok) {
+        setGroups(groups.filter(g => g.id !== confirmDelete.id));
+        setConfirmDelete(null);
+      }
+    } catch {
+      // оставим окно открытым
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  return (
+    <div className="max-w-5xl mx-auto space-y-5">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-1 p-1 bg-muted rounded-xl">
+          <button onClick={() => setTab("students")}
+            className={`px-4 py-1.5 rounded-lg text-sm font-montserrat font-medium transition-colors
+              ${tab === "students" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
+            Ученики {students.length > 0 && <span className="text-xs">· {students.length}</span>}
+          </button>
+          {isTeacher && (
+            <button onClick={() => setTab("groups")}
+              className={`px-4 py-1.5 rounded-lg text-sm font-montserrat font-medium transition-colors
+                ${tab === "groups" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
+              Группы {groups.length > 0 && <span className="text-xs">· {groups.length}</span>}
+            </button>
+          )}
+        </div>
+
+        {isTeacher && tab === "groups" && (
+          <button onClick={openNew}
+            className="flex items-center gap-2 px-4 py-2 red-accent text-white rounded-xl text-sm font-montserrat font-medium hover:opacity-90 transition-opacity">
+            <Icon name="Plus" size={16} />
+            Создать группу
+          </button>
+        )}
+      </div>
+
+      {loading ? (
+        <div className="bg-card rounded-xl border border-border p-10 text-center">
+          <p className="text-muted-foreground text-sm font-ibm">Загрузка...</p>
+        </div>
+      ) : tab === "students" ? (
+        <div className="bg-card rounded-xl border border-border overflow-hidden">
+          <div className="px-4 py-3 border-b border-border">
+            <div className="flex items-center gap-2 bg-muted rounded-lg px-3 py-2">
+              <Icon name="Search" size={15} className="text-muted-foreground flex-shrink-0" />
+              <input type="text" placeholder="Поиск по имени..." value={search}
+                onChange={e => setSearch(e.target.value)}
+                className="bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none w-full font-ibm" />
+            </div>
+          </div>
+
+          {filtered.length === 0 ? (
+            <div className="p-10 text-center">
+              <Icon name="Users" size={36} className="text-muted-foreground mx-auto mb-2" />
+              <p className="text-muted-foreground text-sm font-ibm">Ученики не найдены</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-border">
+              {filtered.map(s => {
+                const inGroups = groupsOf(s.id);
+                return (
+                  <div key={s.id} className="flex items-center gap-3 px-4 py-3">
+                    <div className="w-10 h-10 rounded-full red-accent flex items-center justify-center flex-shrink-0">
+                      <span className="text-white font-montserrat font-bold text-xs">{s.avatar}</span>
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="font-montserrat font-bold text-sm text-foreground truncate">{s.name}</p>
+                      <div className="flex items-center gap-2 flex-wrap mt-0.5">
+                        {s.level && <span className="text-xs text-muted-foreground font-ibm">Уровень {s.level}</span>}
+                        {inGroups.map(g => {
+                          const c = colorOf(g.color);
+                          return (
+                            <span key={g.id} className={`text-xs px-2 py-0.5 rounded-full font-montserrat font-medium ${c.soft}`}>
+                              {g.name}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    {s.lessons_count !== undefined && (
+                      <div className="text-right flex-shrink-0">
+                        <p className="font-montserrat font-bold text-sm text-foreground">{s.lessons_count}</p>
+                        <p className="text-xs text-muted-foreground font-ibm">занятий</p>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      ) : groups.length === 0 ? (
+        <div className="bg-card rounded-xl border border-border p-10 text-center">
+          <Icon name="UsersRound" size={36} className="text-muted-foreground mx-auto mb-2" />
+          <p className="text-muted-foreground text-sm font-ibm mb-4">Групп пока нет</p>
+          <button onClick={openNew}
+            className="inline-flex items-center gap-2 px-4 py-2 red-accent text-white rounded-xl text-sm font-montserrat font-medium hover:opacity-90">
+            <Icon name="Plus" size={16} />
+            Создать первую группу
+          </button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {groups.map(g => {
+            const c = colorOf(g.color);
+            return (
+              <div key={g.id} className="bg-card rounded-xl border border-border p-4 card-hover">
+                <div className="flex items-start justify-between gap-2 mb-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className={`w-3 h-3 rounded-full flex-shrink-0 ${c.dot}`} />
+                    <h3 className="font-montserrat font-bold text-foreground text-sm truncate">{g.name}</h3>
+                  </div>
+                  <div className="flex gap-1 flex-shrink-0">
+                    <button onClick={() => openEdit(g)} className="p-1.5 rounded-lg hover:bg-muted transition-colors">
+                      <Icon name="Pencil" size={15} className="text-muted-foreground" />
+                    </button>
+                    <button onClick={() => setConfirmDelete(g)} className="p-1.5 rounded-lg hover:bg-red-50 transition-colors">
+                      <Icon name="Trash2" size={15} className="text-red-500" />
+                    </button>
+                  </div>
+                </div>
+
+                {g.description && (
+                  <p className="text-xs text-muted-foreground font-ibm mb-3">{g.description}</p>
+                )}
+
+                <p className="text-xs text-muted-foreground font-ibm mb-2">{g.students.length} учеников</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {g.students.map(s => (
+                    <span key={s.id} className="flex items-center gap-1.5 pl-1 pr-2 py-1 rounded-full bg-muted">
+                      <span className="w-5 h-5 rounded-full red-accent flex items-center justify-center">
+                        <span className="text-white font-montserrat font-bold text-[9px]">{s.avatar}</span>
+                      </span>
+                      <span className="text-xs font-ibm text-foreground">{s.name}</span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {editor && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-black/40" onClick={() => !saving && setEditor(null)} />
+          <div className="relative bg-card border border-border rounded-xl shadow-xl w-full max-w-md p-5 animate-scale-in max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-montserrat font-bold text-base text-foreground">
+                {editor === "new" ? "Новая группа" : "Редактировать группу"}
+              </h2>
+              <button onClick={() => setEditor(null)} className="p-1 rounded-md hover:bg-muted transition-colors">
+                <Icon name="X" size={18} className="text-muted-foreground" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-montserrat font-bold text-muted-foreground">Название группы</label>
+                <input type="text" value={form.name} placeholder="Например «Начинающие A1»"
+                  onChange={e => { setForm({ ...form, name: e.target.value }); if (formError) setFormError(""); }}
+                  className={`mt-1 w-full px-3 py-2 rounded-lg border bg-muted/30 text-sm font-ibm outline-none transition-colors
+                    ${formError && !form.name.trim() ? "border-red-400" : "border-border focus:border-primary/40"}`} />
+              </div>
+
+              <div>
+                <label className="text-xs font-montserrat font-bold text-muted-foreground">Описание (необязательно)</label>
+                <input type="text" value={form.description} placeholder="Например «Занятия по вторникам»"
+                  onChange={e => setForm({ ...form, description: e.target.value })}
+                  className="mt-1 w-full px-3 py-2 rounded-lg border border-border bg-muted/30 text-sm font-ibm outline-none focus:border-primary/40" />
+              </div>
+
+              <div>
+                <label className="text-xs font-montserrat font-bold text-muted-foreground">Цвет метки</label>
+                <div className="mt-1.5 flex gap-2">
+                  {GROUP_COLORS.map(c => (
+                    <button key={c.key} type="button" onClick={() => setForm({ ...form, color: c.key })}
+                      className={`w-8 h-8 rounded-full ${c.dot} flex items-center justify-center transition-transform
+                        ${form.color === c.key ? "ring-2 ring-offset-2 ring-foreground/30 scale-105" : ""}`}>
+                      {form.color === c.key && <Icon name="Check" size={14} className="text-white" />}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className={`rounded-lg border ${formError && formStudents.length === 0 ? "border-red-400" : "border-border"}`}>
+                <div className="flex items-center justify-between px-3 py-2 border-b border-border">
+                  <p className="text-xs font-montserrat font-bold text-foreground">
+                    Ученики {formStudents.length > 0 && <span className="text-primary">· {formStudents.length}</span>}
+                  </p>
+                  <button type="button"
+                    onClick={() => {
+                      setFormStudents(formStudents.length === students.length ? [] : students.map(s => s.id));
+                      if (formError) setFormError("");
+                    }}
+                    className="text-xs font-montserrat font-medium text-primary hover:underline">
+                    {formStudents.length === students.length && students.length > 0 ? "Снять всех" : "Выбрать всех"}
+                  </button>
+                </div>
+                <div className="max-h-52 overflow-y-auto p-1.5 space-y-1">
+                  {students.length === 0 ? (
+                    <p className="px-2 py-3 text-xs text-muted-foreground font-ibm text-center">Учеников пока нет</p>
+                  ) : students.map(s => {
+                    const checked = formStudents.includes(s.id);
+                    return (
+                      <button type="button" key={s.id}
+                        onClick={() => {
+                          setFormStudents(checked ? formStudents.filter(id => id !== s.id) : [...formStudents, s.id]);
+                          if (formError) setFormError("");
+                        }}
+                        className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left transition-colors
+                          ${checked ? "bg-primary/10" : "hover:bg-muted"}`}>
+                        <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0
+                          ${checked ? "bg-primary border-primary" : "border-border"}`}>
+                          {checked && <Icon name="Check" size={11} className="text-white" />}
+                        </div>
+                        <div className="w-6 h-6 rounded-full red-accent flex items-center justify-center flex-shrink-0">
+                          <span className="text-white font-montserrat font-bold text-[10px]">{s.avatar}</span>
+                        </div>
+                        <span className="text-xs font-ibm text-foreground truncate flex-1">{s.name}</span>
+                        {s.level && <span className="text-[10px] text-muted-foreground">{s.level}</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {formError && (
+                <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-red-50 border border-red-200 animate-scale-in">
+                  <Icon name="TriangleAlert" size={14} className="text-red-600 flex-shrink-0 mt-0.5" />
+                  <p className="text-xs text-red-700 font-ibm">{formError}</p>
+                </div>
+              )}
+
+              <div className="flex gap-2 pt-1">
+                <button onClick={() => setEditor(null)} disabled={saving}
+                  className="flex-1 py-2 rounded-lg border border-border text-sm font-montserrat font-medium text-foreground hover:bg-muted transition-colors disabled:opacity-60">
+                  Отмена
+                </button>
+                <button onClick={handleSave} disabled={saving}
+                  className="flex-1 py-2 red-accent text-white rounded-lg text-sm font-montserrat font-medium hover:opacity-90 disabled:opacity-60">
+                  {saving ? "Сохраняю..." : editor === "new" ? "Создать" : "Сохранить"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirmDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-black/40" onClick={() => !deleting && setConfirmDelete(null)} />
+          <div className="relative bg-card border border-border rounded-xl shadow-xl w-full max-w-sm p-5 animate-scale-in">
+            <div className="w-11 h-11 rounded-full bg-red-50 flex items-center justify-center mb-3">
+              <Icon name="TriangleAlert" size={22} className="text-red-600" />
+            </div>
+            <h2 className="font-montserrat font-bold text-base text-foreground mb-1.5">Удалить группу?</h2>
+            <p className="text-sm text-muted-foreground font-ibm mb-4">
+              Группа «{confirmDelete.name}» будет удалена. Сами ученики останутся в системе.
+            </p>
+            <div className="flex gap-2">
+              <button onClick={() => setConfirmDelete(null)} disabled={deleting}
+                className="flex-1 py-2 rounded-lg border border-border text-sm font-montserrat font-medium text-foreground hover:bg-muted transition-colors disabled:opacity-60">
+                Отмена
+              </button>
+              <button onClick={handleDelete} disabled={deleting}
+                className="flex-1 py-2 rounded-lg bg-red-600 text-white text-sm font-montserrat font-medium hover:bg-red-700 transition-colors disabled:opacity-60">
+                {deleting ? "Удаляю..." : "Удалить"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

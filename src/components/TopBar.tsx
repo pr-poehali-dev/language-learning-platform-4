@@ -9,6 +9,7 @@ const pageTitles: Record<Page, string> = {
   calendar: "Календарь занятий",
   materials: "Учебные материалы",
   homework: "Домашние задания",
+  students: "Ученики и группы",
   profile: "Мой профиль",
 };
 

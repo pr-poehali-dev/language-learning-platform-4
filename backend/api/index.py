@@ -94,6 +94,17 @@ def handler(event: dict, context) -> dict:
         if path == "students" and method == "GET":
             return get_students(conn)
 
+        # --- Groups ---
+        if path == "groups":
+            if method == "GET":
+                return get_groups(conn, user_id, role)
+            if method == "POST":
+                return create_group(event, conn, user_id, role)
+            if method == "PUT":
+                return update_group(event, conn, user_id, role)
+            if method == "DELETE":
+                return remove_group(event, conn, user_id, role)
+
         # --- Leaderboard ---
         if path == "leaderboard" and method == "GET":
             return get_leaderboard(conn)
@@ -401,10 +412,123 @@ def mark_notifications_read(conn, user_id):
 
 def get_students(conn):
     cur = conn.cursor()
-    cur.execute("SELECT id, name, avatar, level FROM users WHERE role='student' ORDER BY name")
+    cur.execute(
+        """SELECT u.id, u.name, u.avatar, u.level,
+                  (SELECT COUNT(*) FROM lesson_students ls WHERE ls.student_id=u.id) as lessons_count
+           FROM users u WHERE u.role='student' ORDER BY u.name"""
+    )
     rows = cur.fetchall()
     cur.close(); conn.close()
-    return resp(200, {"students": [{"id": r[0], "name": r[1], "avatar": r[2], "level": r[3]} for r in rows]})
+    return resp(200, {"students": [
+        {"id": r[0], "name": r[1], "avatar": r[2], "level": r[3], "lessons_count": r[4]} for r in rows
+    ]})
+
+def _group_ids(raw):
+    ids = []
+    for s in raw or []:
+        try:
+            ids.append(int(s))
+        except (TypeError, ValueError):
+            pass
+    return ids
+
+def get_groups(conn, user_id, role):
+    if role != "teacher":
+        conn.close()
+        return resp(403, {"error": "Только преподаватель"})
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT id, name, description, color FROM student_groups WHERE teacher_id=%s ORDER BY name",
+        (user_id,)
+    )
+    groups = [{"id": r[0], "name": r[1], "description": r[2] or "", "color": r[3], "students": []}
+              for r in cur.fetchall()]
+    if groups:
+        by_id = {g["id"]: g for g in groups}
+        id_list = ",".join(str(i) for i in by_id.keys())
+        cur.execute(
+            f"""SELECT gm.group_id, u.id, u.name, u.avatar, u.level
+                FROM group_members gm JOIN users u ON u.id=gm.student_id
+                WHERE gm.group_id IN ({id_list}) ORDER BY u.name"""
+        )
+        for gid, sid, sname, savatar, slevel in cur.fetchall():
+            if gid in by_id:
+                by_id[gid]["students"].append({"id": sid, "name": sname, "avatar": savatar, "level": slevel})
+    cur.close(); conn.close()
+    return resp(200, {"groups": groups})
+
+def create_group(event, conn, user_id, role):
+    if role != "teacher":
+        conn.close()
+        return resp(403, {"error": "Только преподаватель"})
+    body = json.loads(event.get("body") or "{}")
+    name = (body.get("name") or "").strip()
+    if not name:
+        conn.close()
+        return resp(400, {"error": "Укажите название группы"})
+    cur = conn.cursor()
+    cur.execute(
+        """INSERT INTO student_groups (teacher_id, name, description, color)
+           VALUES (%s,%s,%s,%s) RETURNING id""",
+        (user_id, name, (body.get("description") or "").strip(), body.get("color") or "primary")
+    )
+    group_id = cur.fetchone()[0]
+    for sid in _group_ids(body.get("student_ids")):
+        cur.execute("INSERT INTO group_members (group_id, student_id) VALUES (%s,%s)", (group_id, sid))
+    conn.commit(); cur.close(); conn.close()
+    return resp(200, {"ok": True, "id": group_id})
+
+def update_group(event, conn, user_id, role):
+    if role != "teacher":
+        conn.close()
+        return resp(403, {"error": "Только преподаватель"})
+    body = json.loads(event.get("body") or "{}")
+    group_id = body.get("id")
+    name = (body.get("name") or "").strip()
+    if not group_id or not name:
+        conn.close()
+        return resp(400, {"error": "Укажите группу и название"})
+    cur = conn.cursor()
+    cur.execute(
+        """UPDATE student_groups SET name=%s, description=%s, color=%s
+           WHERE id=%s AND teacher_id=%s RETURNING id""",
+        (name, (body.get("description") or "").strip(), body.get("color") or "primary", group_id, user_id)
+    )
+    if not cur.fetchone():
+        cur.close(); conn.close()
+        return resp(404, {"error": "Группа не найдена"})
+    if body.get("student_ids") is not None:
+        new_ids = set(_group_ids(body.get("student_ids")))
+        cur.execute("SELECT student_id FROM group_members WHERE group_id=%s", (group_id,))
+        old_ids = set(r[0] for r in cur.fetchall())
+        for sid in new_ids - old_ids:
+            cur.execute("INSERT INTO group_members (group_id, student_id) VALUES (%s,%s)", (group_id, sid))
+        drop = old_ids - new_ids
+        if drop:
+            drop_list = ",".join(str(i) for i in drop)
+            cur.execute(f"DELETE FROM group_members WHERE group_id=%s AND student_id IN ({drop_list})", (group_id,))
+    conn.commit(); cur.close(); conn.close()
+    return resp(200, {"ok": True})
+
+def remove_group(event, conn, user_id, role):
+    if role != "teacher":
+        conn.close()
+        return resp(403, {"error": "Только преподаватель"})
+    params = event.get("queryStringParameters") or {}
+    body = json.loads(event.get("body") or "{}")
+    group_id = body.get("id") or params.get("id")
+    if not group_id:
+        conn.close()
+        return resp(400, {"error": "id обязателен"})
+    cur = conn.cursor()
+    cur.execute("SELECT id FROM student_groups WHERE id=%s AND teacher_id=%s", (group_id, user_id))
+    if not cur.fetchone():
+        cur.close(); conn.close()
+        return resp(404, {"error": "Группа не найдена"})
+    cur.execute("DELETE FROM group_members WHERE group_id=%s", (group_id,))
+    cur.execute("DELETE FROM student_groups WHERE id=%s AND teacher_id=%s", (group_id, user_id))
+    conn.commit(); cur.close(); conn.close()
+    return resp(200, {"ok": True})
 
 def get_leaderboard(conn):
     cur = conn.cursor()

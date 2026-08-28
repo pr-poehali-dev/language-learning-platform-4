@@ -6,13 +6,14 @@ import CalendarPage from "./pages/CalendarPage";
 import MaterialsPage from "./pages/MaterialsPage";
 import HomeworkPage from "./pages/HomeworkPage";
 import ProfilePage from "./pages/ProfilePage";
+import StudentsPage from "./pages/StudentsPage";
 import LoginPage, { type User } from "./pages/LoginPage";
 import Sidebar from "./components/Sidebar";
 import TopBar from "./components/TopBar";
 import Footer from "./components/Footer";
 import { apiMe, apiLogout } from "./lib/api";
 
-export type Page = "dashboard" | "calendar" | "materials" | "homework" | "profile";
+export type Page = "dashboard" | "calendar" | "materials" | "homework" | "students" | "profile";
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -67,6 +68,7 @@ export default function App() {
       case "calendar": return <CalendarPage user={user} />;
       case "materials": return <MaterialsPage user={user} />;
       case "homework": return <HomeworkPage user={user} />;
+      case "students": return <StudentsPage user={user} />;
       case "profile": return <ProfilePage user={user} />;
       default: return <Dashboard onNavigate={setActivePage} user={user} />;
     }
