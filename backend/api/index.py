@@ -242,19 +242,61 @@ def move_lesson(event, conn, user_id, role):
         conn.close()
         return resp(400, {"error": "id, дата и время обязательны"})
     cur = conn.cursor()
-    cur.execute(
-        "UPDATE lessons SET lesson_date=%s, lesson_time=%s WHERE id=%s AND teacher_id=%s RETURNING topic",
-        (lesson_date, lesson_time, lesson_id, user_id)
-    )
-    row = cur.fetchone()
-    if not row:
+    cur.execute("SELECT topic, lesson_date, lesson_time FROM lessons WHERE id=%s AND teacher_id=%s",
+                (lesson_id, user_id))
+    old = cur.fetchone()
+    if not old:
         cur.close(); conn.close()
         return resp(404, {"error": "Занятие не найдено"})
-    topic = row[0]
+    old_topic, old_date, old_time = old
+
+    topic = (body.get("topic") or "").strip() or old_topic
+    lesson_type = body.get("lesson_type")
+    duration = body.get("duration_min")
+
+    fields = ["lesson_date=%s", "lesson_time=%s", "topic=%s", "title=%s"]
+    values = [lesson_date, lesson_time, topic, topic]
+    if lesson_type:
+        fields.append("lesson_type=%s"); values.append(lesson_type)
+    if duration:
+        fields.append("duration_min=%s"); values.append(int(duration))
+    values.extend([lesson_id, user_id])
+    cur.execute(f"UPDATE lessons SET {', '.join(fields)} WHERE id=%s AND teacher_id=%s", tuple(values))
+
     cur.execute("SELECT student_id FROM lesson_students WHERE lesson_id=%s", (lesson_id,))
-    for (sid,) in cur.fetchall():
-        cur.execute("INSERT INTO notifications (user_id, text, type) VALUES (%s,%s,'calendar')",
-                    (sid, f"Занятие перенесено на {lesson_date} {lesson_time}: {topic}"))
+    old_students = set(r[0] for r in cur.fetchall())
+
+    raw_ids = body.get("student_ids")
+    new_students = old_students
+    if raw_ids is not None:
+        new_students = set()
+        for s in raw_ids:
+            try:
+                new_students.add(int(s))
+            except (TypeError, ValueError):
+                pass
+        added = new_students - old_students
+        removed = old_students - new_students
+        for sid in added:
+            cur.execute("INSERT INTO lesson_students (lesson_id, student_id) VALUES (%s,%s)", (lesson_id, sid))
+            cur.execute("INSERT INTO notifications (user_id, text, type) VALUES (%s,%s,'calendar')",
+                        (sid, f"Вас записали на занятие {lesson_date} {lesson_time}: {topic}"))
+        for sid in removed:
+            cur.execute("DELETE FROM lesson_students WHERE lesson_id=%s AND student_id=%s", (lesson_id, sid))
+            cur.execute("INSERT INTO notifications (user_id, text, type) VALUES (%s,%s,'calendar')",
+                        (sid, f"Вас убрали с занятия {old_date} {str(old_time)[:5]}: {old_topic}"))
+
+    changed_time = str(old_date) != str(lesson_date) or str(old_time)[:5] != str(lesson_time)[:5]
+    changed_topic = old_topic != topic
+    if changed_time or changed_topic:
+        stay = new_students & old_students if raw_ids is not None else old_students
+        for sid in stay:
+            if changed_time:
+                text = f"Занятие перенесено на {lesson_date} {lesson_time}: {topic}"
+            else:
+                text = f"Занятие {lesson_date} {lesson_time} изменено: {topic}"
+            cur.execute("INSERT INTO notifications (user_id, text, type) VALUES (%s,%s,'calendar')", (sid, text))
+
     conn.commit(); cur.close(); conn.close()
     return resp(200, {"ok": True})
 

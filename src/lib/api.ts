@@ -114,6 +114,19 @@ export async function apiCreateLesson(data: CreateLessonData) {
   return r.data as { ok?: boolean; id?: number; error?: string };
 }
 
+export async function apiUpdateLesson(data: {
+  id: number;
+  lesson_date: string;
+  lesson_time: string;
+  topic?: string;
+  lesson_type?: string;
+  duration_min?: number;
+  student_ids?: number[];
+}) {
+  const r = await request(API_URL + "?p=calendar", { method: "PUT", body: JSON.stringify(data) });
+  return r.data as { ok?: boolean; error?: string };
+}
+
 export async function apiMoveLesson(data: { id: number; lesson_date: string; lesson_time: string }) {
   const r = await request(API_URL + "?p=calendar", { method: "PUT", body: JSON.stringify(data) });
   return r.data as { ok?: boolean; error?: string };

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import Icon from "@/components/ui/icon";
-import { apiGetCalendar, apiCreateLesson, apiMoveLesson, apiDeleteLesson, apiGetStudents, type Lesson, type StudentInfo, type User } from "@/lib/api";
+import { apiGetCalendar, apiCreateLesson, apiMoveLesson, apiDeleteLesson, apiUpdateLesson, apiGetStudents, type Lesson, type StudentInfo, type User } from "@/lib/api";
 
 const DAYS = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"];
 const MONTHS_GEN = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"];
@@ -48,6 +48,11 @@ export default function CalendarPage({ user }: { user: User }) {
   const [formError, setFormError] = useState("");
   const [students, setStudents] = useState<StudentInfo[]>([]);
   const [selectedStudents, setSelectedStudents] = useState<number[]>([]);
+  const [editLesson, setEditLesson] = useState<Lesson | null>(null);
+  const [editForm, setEditForm] = useState({ topic: "", lesson_date: "", lesson_time: "", duration_min: 60, lesson_type: "Грамматика" });
+  const [editStudents, setEditStudents] = useState<number[]>([]);
+  const [editError, setEditError] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
 
   useEffect(() => {
     apiGetCalendar()
@@ -119,6 +124,52 @@ export default function CalendarPage({ user }: { user: User }) {
     const next = idx + delta;
     if (idx === -1 || next < 0 || next >= TIME_SLOTS.length) return;
     moveLesson(lesson.id, lesson.lesson_date, TIME_SLOTS[next]);
+  };
+
+  const openEdit = (lesson: Lesson) => {
+    setEditLesson(lesson);
+    setEditForm({
+      topic: lesson.topic,
+      lesson_date: lesson.lesson_date,
+      lesson_time: lesson.lesson_time.slice(0, 5),
+      duration_min: lesson.duration_min,
+      lesson_type: lesson.lesson_type,
+    });
+    setEditStudents((lesson.students || []).map(s => s.id));
+    setEditError("");
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editLesson) return;
+    if (!editForm.topic.trim()) { setEditError("Заполните тему урока — например «Урок с Дашей»"); return; }
+    if (!editForm.lesson_date) { setEditError("Выберите дату занятия"); return; }
+    if (!editForm.lesson_time) { setEditError("Укажите время занятия"); return; }
+    if (editStudents.length === 0) { setEditError("Выберите хотя бы одного ученика"); return; }
+    setEditError("");
+    setEditSaving(true);
+    try {
+      const res = await apiUpdateLesson({
+        id: editLesson.id,
+        lesson_date: editForm.lesson_date,
+        lesson_time: editForm.lesson_time,
+        topic: editForm.topic.trim(),
+        lesson_type: editForm.lesson_type,
+        duration_min: editForm.duration_min,
+        student_ids: editStudents,
+      });
+      if (res.ok) {
+        const updated = await apiGetCalendar();
+        if (updated.lessons) setLessons(updated.lessons);
+        setSelected({ date: editForm.lesson_date, time: editForm.lesson_time });
+        setEditLesson(null);
+      } else {
+        setEditError(res.error || "Не удалось сохранить изменения");
+      }
+    } catch {
+      setEditError("Нет связи с сервером, попробуйте ещё раз");
+    } finally {
+      setEditSaving(false);
+    }
   };
 
   const handleDeleteLesson = async () => {
@@ -230,7 +281,7 @@ export default function CalendarPage({ user }: { user: User }) {
               ) : moveStatus === "error" ? (
                 <span className="flex items-center gap-1.5 text-red-600"><Icon name="TriangleAlert" size={13} />Не удалось перенести</span>
               ) : (
-                <span className="flex items-center gap-1.5 text-muted-foreground"><Icon name="Move" size={13} />Перетащите занятие мышкой, стрелки — сдвиг, правый клик — удалить</span>
+                <span className="flex items-center gap-1.5 text-muted-foreground"><Icon name="Move" size={13} />Перетащить — перенос, двойной клик — изменить, правый клик — удалить</span>
               )}
             </div>
           )}
@@ -285,6 +336,7 @@ export default function CalendarPage({ user }: { user: User }) {
                               onDragStart={() => lesson && setDragId(lesson.id)}
                               onDragEnd={() => { setDragId(null); setDropTarget(null); }}
                               onClick={() => handleSlotClick(dateKey, time)}
+                              onDoubleClick={() => { if (isTeacher && lesson) openEdit(lesson); }}
                               onContextMenu={e => {
                                 if (isTeacher && lesson) { e.preventDefault(); setConfirmDelete(lesson); }
                               }}
@@ -470,11 +522,18 @@ export default function CalendarPage({ user }: { user: User }) {
                   </button>
 
                   {isTeacher && (
-                    <button onClick={() => setConfirmDelete(selectedLesson)}
-                      className="mt-2 w-full flex items-center justify-center gap-1.5 py-2 rounded-lg border border-red-200 text-red-600 text-sm font-montserrat font-medium hover:bg-red-50 transition-colors">
-                      <Icon name="Trash2" size={14} />
-                      Удалить занятие
-                    </button>
+                    <div className="mt-2 flex gap-2">
+                      <button onClick={() => openEdit(selectedLesson)}
+                        className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border border-border text-foreground text-sm font-montserrat font-medium hover:bg-muted transition-colors">
+                        <Icon name="Pencil" size={14} />
+                        Изменить
+                      </button>
+                      <button onClick={() => setConfirmDelete(selectedLesson)}
+                        className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border border-red-200 text-red-600 text-sm font-montserrat font-medium hover:bg-red-50 transition-colors">
+                        <Icon name="Trash2" size={14} />
+                        Удалить
+                      </button>
+                    </div>
                   )}
                 </div>
               ) : (
@@ -542,6 +601,122 @@ export default function CalendarPage({ user }: { user: User }) {
           </div>
         </div>
       </div>
+
+      {editLesson && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-black/40" onClick={() => !editSaving && setEditLesson(null)} />
+          <div className="relative bg-card border border-border rounded-xl shadow-xl w-full max-w-md p-5 animate-scale-in max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-montserrat font-bold text-base text-foreground">Редактировать занятие</h2>
+              <button onClick={() => setEditLesson(null)} className="p-1 rounded-md hover:bg-muted transition-colors">
+                <Icon name="X" size={18} className="text-muted-foreground" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-montserrat font-bold text-muted-foreground">Тема урока</label>
+                <input type="text" value={editForm.topic}
+                  onChange={e => { setEditForm({ ...editForm, topic: e.target.value }); if (editError) setEditError(""); }}
+                  placeholder="Например «Урок с Дашей»"
+                  className={`mt-1 w-full px-3 py-2 rounded-lg border bg-muted/30 text-sm font-ibm outline-none transition-colors
+                    ${editError && !editForm.topic.trim() ? "border-red-400" : "border-border focus:border-primary/40"}`} />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs font-montserrat font-bold text-muted-foreground">Дата</label>
+                  <input type="date" value={editForm.lesson_date}
+                    onChange={e => { setEditForm({ ...editForm, lesson_date: e.target.value }); if (editError) setEditError(""); }}
+                    className="mt-1 w-full px-3 py-2 rounded-lg border border-border bg-muted/30 text-sm font-ibm outline-none focus:border-primary/40" />
+                </div>
+                <div>
+                  <label className="text-xs font-montserrat font-bold text-muted-foreground">Время начала</label>
+                  <input type="time" value={editForm.lesson_time}
+                    onChange={e => { setEditForm({ ...editForm, lesson_time: e.target.value }); if (editError) setEditError(""); }}
+                    className="mt-1 w-full px-3 py-2 rounded-lg border border-border bg-muted/30 text-sm font-ibm outline-none focus:border-primary/40" />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs font-montserrat font-bold text-muted-foreground">Тип занятия</label>
+                  <select value={editForm.lesson_type} onChange={e => setEditForm({ ...editForm, lesson_type: e.target.value })}
+                    className="mt-1 w-full px-3 py-2 rounded-lg border border-border bg-muted/30 text-sm font-ibm outline-none focus:border-primary/40">
+                    {lessonTypes.map(t => <option key={t}>{t}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-montserrat font-bold text-muted-foreground">Длительность, мин</label>
+                  <input type="number" min={15} step={15} value={editForm.duration_min}
+                    onChange={e => setEditForm({ ...editForm, duration_min: Number(e.target.value) })}
+                    className="mt-1 w-full px-3 py-2 rounded-lg border border-border bg-muted/30 text-sm font-ibm outline-none focus:border-primary/40" />
+                </div>
+              </div>
+
+              <div className={`rounded-lg border ${editError && editStudents.length === 0 ? "border-red-400" : "border-border"}`}>
+                <div className="flex items-center justify-between px-3 py-2 border-b border-border">
+                  <p className="text-xs font-montserrat font-bold text-foreground">
+                    Ученики {editStudents.length > 0 && <span className="text-primary">· {editStudents.length}</span>}
+                  </p>
+                  <button type="button"
+                    onClick={() => {
+                      setEditStudents(editStudents.length === students.length ? [] : students.map(s => s.id));
+                      if (editError) setEditError("");
+                    }}
+                    className="text-xs font-montserrat font-medium text-primary hover:underline">
+                    {editStudents.length === students.length && students.length > 0 ? "Снять всех" : "Вся группа"}
+                  </button>
+                </div>
+                <div className="max-h-44 overflow-y-auto p-1.5 space-y-1">
+                  {students.length === 0 ? (
+                    <p className="px-2 py-3 text-xs text-muted-foreground font-ibm text-center">Учеников пока нет</p>
+                  ) : students.map(s => {
+                    const checked = editStudents.includes(s.id);
+                    return (
+                      <button type="button" key={s.id}
+                        onClick={() => {
+                          setEditStudents(checked ? editStudents.filter(id => id !== s.id) : [...editStudents, s.id]);
+                          if (editError) setEditError("");
+                        }}
+                        className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left transition-colors
+                          ${checked ? "bg-primary/10" : "hover:bg-muted"}`}>
+                        <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0
+                          ${checked ? "bg-primary border-primary" : "border-border"}`}>
+                          {checked && <Icon name="Check" size={11} className="text-white" />}
+                        </div>
+                        <div className="w-6 h-6 rounded-full red-accent flex items-center justify-center flex-shrink-0">
+                          <span className="text-white font-montserrat font-bold text-[10px]">{s.avatar}</span>
+                        </div>
+                        <span className="text-xs font-ibm text-foreground truncate flex-1">{s.name}</span>
+                        {s.level && <span className="text-[10px] text-muted-foreground">{s.level}</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {editError && (
+                <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-red-50 border border-red-200 animate-scale-in">
+                  <Icon name="TriangleAlert" size={14} className="text-red-600 flex-shrink-0 mt-0.5" />
+                  <p className="text-xs text-red-700 font-ibm">{editError}</p>
+                </div>
+              )}
+
+              <div className="flex gap-2 pt-1">
+                <button onClick={() => setEditLesson(null)} disabled={editSaving}
+                  className="flex-1 py-2 rounded-lg border border-border text-sm font-montserrat font-medium text-foreground hover:bg-muted transition-colors disabled:opacity-60">
+                  Отмена
+                </button>
+                <button onClick={handleSaveEdit} disabled={editSaving}
+                  className="flex-1 py-2 red-accent text-white rounded-lg text-sm font-montserrat font-medium hover:opacity-90 disabled:opacity-60">
+                  {editSaving ? "Сохраняю..." : "Сохранить"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {confirmDelete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
