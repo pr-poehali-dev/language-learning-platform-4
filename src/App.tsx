@@ -26,7 +26,6 @@ export default function App() {
   const [checking, setChecking] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [lessonRoom, setLessonRoom] = useState<string | null>(null);
-  const [chatStudents, setChatStudents] = useState<number[] | null>(null);
 
   // Восстановить сессию из localStorage
   useEffect(() => {
@@ -72,11 +71,11 @@ export default function App() {
     switch (activePage) {
       case "dashboard": return <Dashboard onNavigate={setActivePage} user={user} />;
       case "calendar": return <CalendarPage user={user} onJoinLesson={(room) => { setLessonRoom(room); setActivePage("lesson"); }} />;
-      case "lesson": return <LessonRoomPage user={user} initialRoom={lessonRoom} onLeave={() => setLessonRoom(null)} onOpenChat={(ids) => { setChatStudents(ids); setActivePage("chat"); }} />;
+      case "lesson": return <LessonRoomPage user={user} initialRoom={lessonRoom} onLeave={() => setLessonRoom(null)} />;
       case "materials": return <MaterialsPage user={user} />;
       case "homework": return <HomeworkPage user={user} />;
       case "students": return <StudentsPage user={user} />;
-      case "chat": return <ChatPage user={user} preselect={chatStudents} />;
+      case "chat": return <ChatPage user={user} />;
       case "profile": return <ProfilePage user={user} />;
       default: return <Dashboard onNavigate={setActivePage} user={user} />;
     }

@@ -48,7 +48,7 @@ function Attachment({ m }: { m: ChatMessage }) {
   );
 }
 
-export default function ChatPage({ user, preselect }: { user: User; preselect?: number[] | null }) {
+export default function ChatPage({ user, preselect, panel }: { user: User; preselect?: number[] | null; panel?: boolean }) {
   const isTeacher = user.role === "teacher";
   const { refresh } = useChatAlerts();
   const [contacts, setContacts] = useState<ChatContact[]>([]);
@@ -259,12 +259,15 @@ export default function ChatPage({ user, preselect }: { user: User; preselect?: 
   const filteredGroups = groups.filter(g => g.name.toLowerCase().includes(search.toLowerCase()));
 
   return (
-    <div className="max-w-6xl mx-auto">
-      <div className="bg-card rounded-xl border border-border overflow-hidden flex flex-col md:flex-row h-[calc(100vh-9rem)] min-h-[500px]">
+    <div className={panel ? "h-full" : "max-w-6xl mx-auto"}>
+      <div className={`bg-card overflow-hidden flex flex-col ${panel
+        ? "h-full"
+        : "md:flex-row rounded-xl border border-border h-[calc(100vh-9rem)] min-h-[500px]"}`}>
 
         {/* Список собеседников */}
-        <div className={`md:w-72 md:flex-shrink-0 border-b md:border-b-0 md:border-r border-border flex flex-col
-          ${listOpen ? "flex" : "hidden md:flex"}`}>
+        <div className={`border-b border-border flex-col
+          ${panel ? "" : "md:w-72 md:flex-shrink-0 md:border-b-0 md:border-r"}
+          ${listOpen ? "flex" : "hidden"} ${panel ? "" : "md:flex"}`}>
           <div className="p-3 border-b border-border">
             <div className="relative">
               <Icon name="Search" size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
@@ -335,7 +338,7 @@ export default function ChatPage({ user, preselect }: { user: User; preselect?: 
         </div>
 
         {/* Переписка */}
-        <div className={`flex-1 flex flex-col min-w-0 ${listOpen ? "hidden md:flex" : "flex"}`}>
+        <div className={`flex-1 flex flex-col min-w-0 ${listOpen ? (panel ? "hidden" : "hidden md:flex") : "flex"}`}>
           {!target ? (
             <div className="flex-1 flex flex-col items-center justify-center text-center px-6">
               <Icon name="MessageSquare" size={40} className="text-muted-foreground/40 mb-3" />
@@ -346,7 +349,7 @@ export default function ChatPage({ user, preselect }: { user: User; preselect?: 
           ) : (
             <>
               <div className="flex items-center gap-3 px-4 py-3 border-b border-border">
-                <button onClick={() => setListOpen(true)} className="md:hidden text-muted-foreground">
+                <button onClick={() => setListOpen(true)} className={`${panel ? "" : "md:hidden"} text-muted-foreground`}>
                   <Icon name="ChevronLeft" size={20} />
                 </button>
                 <span className="relative flex-shrink-0">

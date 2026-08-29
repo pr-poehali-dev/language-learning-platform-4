@@ -3,6 +3,7 @@ import { useChatAlerts } from "@/hooks/useChatAlerts";
 import Icon from "@/components/ui/icon";
 import { apiGetCalendar, apiStartLesson, type Lesson } from "@/lib/api";
 import { type User } from "@/pages/LoginPage";
+import ChatPage from "@/pages/ChatPage";
 
 const JITSI_HOST = "hispania-35.ru";
 
@@ -16,15 +17,15 @@ interface Props {
   user: User;
   initialRoom?: string | null;
   onLeave?: () => void;
-  onOpenChat?: (studentIds: number[]) => void;
 }
 
-export default function LessonRoomPage({ user, initialRoom, onLeave, onOpenChat }: Props) {
+export default function LessonRoomPage({ user, initialRoom, onLeave }: Props) {
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [loading, setLoading] = useState(true);
   const [room, setRoom] = useState<string | null>(initialRoom || null);
   const [customRoom, setCustomRoom] = useState("");
   const [notice, setNotice] = useState("");
+  const [chatOpen, setChatOpen] = useState(false);
   const { setInLesson } = useChatAlerts();
 
   useEffect(() => {
@@ -85,10 +86,7 @@ export default function LessonRoomPage({ user, initialRoom, onLeave, onOpenChat 
 
   const activeLesson = room ? lessons.find(l => buildRoomName(l) === room) : undefined;
 
-  const openLessonChat = () => {
-    if (!onOpenChat) return;
-    onOpenChat((activeLesson?.students || []).map(s => s.id));
-  };
+  const chatPeers = (activeLesson?.students || []).map(s => s.id);
 
   if (room) {
     const url = buildRoomUrl(room, user.name);
@@ -114,13 +112,12 @@ export default function LessonRoomPage({ user, initialRoom, onLeave, onOpenChat 
               <Icon name="ExternalLink" size={15} />
               В новом окне
             </a>
-            {onOpenChat && (
-              <button onClick={openLessonChat} title="Открыть чат урока"
-                className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-border text-sm font-montserrat font-medium text-foreground hover:bg-muted transition-colors">
-                <Icon name="MessageSquare" size={15} />
-                Чат
-              </button>
-            )}
+            <button onClick={() => setChatOpen(v => !v)} title="Чат урока"
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg border text-sm font-montserrat font-medium transition-colors
+                ${chatOpen ? "red-accent text-white border-transparent" : "border-border text-foreground hover:bg-muted"}`}>
+              <Icon name="MessageSquare" size={15} />
+              Чат
+            </button>
             <button onClick={() => { setRoom(null); onLeave?.(); }}
               className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-red-600 text-white text-sm font-montserrat font-medium hover:bg-red-700 transition-colors">
               <Icon name="PhoneOff" size={15} />
@@ -136,13 +133,30 @@ export default function LessonRoomPage({ user, initialRoom, onLeave, onOpenChat 
           </div>
         )}
 
-        <div className="bg-card rounded-xl border border-border overflow-hidden">
-          <iframe
-            src={url}
-            title="Видеоурок"
-            allow="camera; microphone; fullscreen; display-capture; autoplay; clipboard-write"
-            className="w-full h-[70vh] min-h-[480px] border-0"
-          />
+        <div className="flex flex-col lg:flex-row gap-3">
+          <div className="flex-1 min-w-0 bg-card rounded-xl border border-border overflow-hidden">
+            <iframe
+              src={url}
+              title="Видеоурок"
+              allow="camera; microphone; fullscreen; display-capture; autoplay; clipboard-write"
+              className="w-full h-[70vh] min-h-[480px] border-0"
+            />
+          </div>
+
+          {chatOpen && (
+            <div className="lg:w-80 lg:flex-shrink-0 bg-card rounded-xl border border-border overflow-hidden h-[70vh] min-h-[480px] flex flex-col animate-fade-in">
+              <div className="px-3 py-2 border-b border-border flex items-center gap-2">
+                <Icon name="MessageSquare" size={14} className="text-primary" />
+                <p className="text-sm font-montserrat font-bold text-foreground flex-1">Чат урока</p>
+                <button onClick={() => setChatOpen(false)} className="text-muted-foreground hover:text-foreground">
+                  <Icon name="X" size={15} />
+                </button>
+              </div>
+              <div className="flex-1 min-h-0">
+                <ChatPage user={user} preselect={chatPeers} panel />
+              </div>
+            </div>
+          )}
         </div>
 
         <p className="text-xs text-muted-foreground font-ibm text-center">
