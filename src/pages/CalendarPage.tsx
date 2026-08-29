@@ -417,7 +417,7 @@ export default function CalendarPage({ user, onJoinLesson }: { user: User; onJoi
           <div className="px-4 py-3 flex items-center gap-4 text-xs text-muted-foreground font-ibm border-t border-border flex-wrap">
             <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-green-500" /><span>Свободно</span></div>
             <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-orange-300" /><span>Занятие назначено</span></div>
-            <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-muted" /><span>Прошло</span></div>
+            <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-gray-200" /><span>Прошло</span></div>
           </div>
         </div>
 
