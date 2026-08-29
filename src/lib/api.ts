@@ -1,6 +1,7 @@
 const AUTH_URL = "https://functions.poehali.dev/8e1fb776-5df3-4087-84d5-894ba0980004";
 const HOMEWORK_URL = "https://functions.poehali.dev/ada0a99c-976c-4672-bfd4-ae6d47384e64";
 const API_URL = "https://functions.poehali.dev/e7c17244-0dc8-4e62-b8d4-2e668d7af9d1";
+const LIBRARY_URL = "https://functions.poehali.dev/5b3dca5a-a2f2-4bfb-a41e-c63f332038b0";
 
 function getToken(): string {
   return localStorage.getItem("hispania_token") || "";
@@ -471,4 +472,49 @@ export interface LeaderboardEntry {
   avatar: string;
   level?: string;
   score: number;
+}
+
+// ── Библиотека ────────────────────────────────────────────────────────────────
+
+export interface LibraryItem {
+  id: number;
+  title: string;
+  author?: string;
+  description?: string;
+  kind: "book" | "audio";
+  file_url: string;
+  file_name?: string;
+  mime?: string;
+  size_bytes?: number;
+  duration_sec?: number;
+  created_at?: string;
+  students?: { id: number; name: string; avatar: string }[];
+}
+
+export async function apiGetLibrary() {
+  const r = await request(LIBRARY_URL);
+  return r.data as { items?: LibraryItem[]; error?: string };
+}
+
+export async function apiUploadLibraryItem(data: {
+  title: string;
+  author?: string;
+  description?: string;
+  file_data: string;
+  file_name: string;
+  mime: string;
+  duration_sec?: number;
+}) {
+  const r = await request(LIBRARY_URL, { method: "POST", body: JSON.stringify(data) });
+  return r.data as { ok?: boolean; id?: number; file_url?: string; kind?: string; error?: string };
+}
+
+export async function apiDeleteLibraryItem(id: number) {
+  const r = await request(`${LIBRARY_URL}?id=${id}`, { method: "DELETE", body: JSON.stringify({ id }) });
+  return r.data as { ok?: boolean; error?: string };
+}
+
+export async function apiAssignLibraryItem(data: { item_id: number; student_ids?: number[]; group_id?: number }) {
+  const r = await request(LIBRARY_URL + "?p=assign", { method: "POST", body: JSON.stringify(data) });
+  return r.data as { ok?: boolean; assigned?: number; error?: string };
 }

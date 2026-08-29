@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { type User } from "@/pages/LoginPage";
 import { apiGetMaterials, apiCreateMaterial, type Material } from "@/lib/api";
 import Icon from "@/components/ui/icon";
+import LibraryPanel from "@/components/LibraryPanel";
 
 const categories = ["Все", "Грамматика", "Аудио", "Видео", "Упражнения", "Словари"];
 
@@ -14,6 +15,7 @@ const typeColors: Record<string, string> = {
 };
 
 export default function MaterialsPage({ user }: { user: User }) {
+  const [section, setSection] = useState<"materials" | "library">("materials");
   const [activeCategory, setActiveCategory] = useState("Все");
   const [search, setSearch] = useState("");
   const [materials, setMaterials] = useState<Material[]>([]);
@@ -56,6 +58,25 @@ export default function MaterialsPage({ user }: { user: User }) {
 
   return (
     <div className="max-w-5xl mx-auto space-y-5">
+      <div className="flex gap-2 bg-muted/40 rounded-xl p-1 w-fit">
+        <button onClick={() => setSection("materials")}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-montserrat font-medium transition-all
+            ${section === "materials" ? "bg-card shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+          <Icon name="FolderOpen" size={15} />
+          Материалы
+        </button>
+        <button onClick={() => setSection("library")}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-montserrat font-medium transition-all
+            ${section === "library" ? "bg-card shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+          <Icon name="Library" size={15} />
+          Библиотека
+        </button>
+      </div>
+
+      {section === "library" ? (
+        <LibraryPanel isTeacher={user.role === "teacher"} />
+      ) : (
+      <>
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="flex items-center gap-2 bg-card rounded-xl border border-border px-4 py-2.5 flex-1">
           <Icon name="Search" size={16} className="text-muted-foreground flex-shrink-0" />
@@ -161,6 +182,8 @@ export default function MaterialsPage({ user }: { user: User }) {
           <Icon name="SearchX" size={40} className="text-muted-foreground mx-auto mb-3" />
           <p className="text-muted-foreground font-ibm">Материалов не найдено</p>
         </div>
+      )}
+      </>
       )}
     </div>
   );
