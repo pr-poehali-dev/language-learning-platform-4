@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import Icon from "@/components/ui/icon";
 import { type User } from "@/pages/LoginPage";
 import {
-  apiGetChatContacts, apiGetMessages, apiSendMessage, apiEditMessage, apiDeleteMessage, apiSetTyping,
+  apiGetChatContacts, apiGetMessages, apiSendMessage, apiEditMessage, apiDeleteMessage, apiSetTyping, apiPinMessage,
   type ChatMessage, type ChatContact, type ChatGroup,
 } from "@/lib/api";
 import { useChatAlerts } from "@/hooks/useChatAlerts";
@@ -48,7 +48,7 @@ function Attachment({ m }: { m: ChatMessage }) {
   );
 }
 
-export default function ChatPage({ user }: { user: User }) {
+export default function ChatPage({ user, preselect }: { user: User; preselect?: number[] | null }) {
   const isTeacher = user.role === "teacher";
   const { refresh } = useChatAlerts();
   const [contacts, setContacts] = useState<ChatContact[]>([]);
@@ -61,6 +61,7 @@ export default function ChatPage({ user }: { user: User }) {
   const [search, setSearch] = useState("");
   const [listOpen, setListOpen] = useState(true);
 
+  const [msgSearch, setMsgSearch] = useState("");
   const [peerTyping, setPeerTyping] = useState(false);
   const typingSentRef = useRef(0);
   const [editId, setEditId] = useState<number | null>(null);
@@ -219,6 +220,40 @@ export default function ChatPage({ user }: { user: User }) {
     }
   };
 
+  const togglePin = async (m: ChatMessage, pin: boolean) => {
+    const res = await apiPinMessage(m.id, pin);
+    if (res.ok) loadMessages();
+    else setErr(res.error || "Не удалось закрепить");
+  };
+
+  const pinned = messages.filter(m => m.pinned_at);
+  const shown = msgSearch.trim()
+    ? messages.filter(m =>
+        (m.text || "").toLowerCase().includes(msgSearch.toLowerCase()) ||
+        (m.file_name || "").toLowerCase().includes(msgSearch.toLowerCase()))
+    : messages;
+
+  const appliedRef = useRef<string>("");
+  useEffect(() => {
+    const ids = preselect || [];
+    const key = ids.join(",");
+    if (!key || appliedRef.current === key) return;
+    if (!contacts.length && !groups.length) return;
+    appliedRef.current = key;
+
+    if (ids.length === 1) {
+      const c = contacts.find(x => x.id === ids[0]);
+      if (c) { setTarget({ kind: "user", id: c.id, name: c.name, avatar: c.avatar }); setListOpen(false); }
+      return;
+    }
+    const set = new Set(ids);
+    const g = groups.find(gr => gr.students.length === set.size && gr.students.every(s => set.has(s.id)));
+    if (g) {
+      setTarget({ kind: "group", id: g.id, name: g.name, count: g.students.length });
+      setListOpen(false);
+    }
+  }, [preselect, contacts, groups]);
+
   const targetOnline = target?.kind === "user" && !!contacts.find(c => c.id === target.id)?.online;
   const filtered = contacts.filter(c => c.name.toLowerCase().includes(search.toLowerCase()));
   const filteredGroups = groups.filter(g => g.name.toLowerCase().includes(search.toLowerCase()));
@@ -248,7 +283,7 @@ export default function ChatPage({ user }: { user: User }) {
               const active = target?.kind === "group" && target.id === g.id;
               return (
                 <button key={"g" + g.id}
-                  onClick={() => { setTarget({ kind: "group", id: g.id, name: g.name, count: g.students.length }); setListOpen(false); }}
+                  onClick={() => { setTarget({ kind: "group", id: g.id, name: g.name, count: g.students.length }); setListOpen(false); setMsgSearch(""); }}
                   className={`w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors ${active ? "bg-muted" : "hover:bg-muted/50"}`}>
                   <span className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
                     style={{ background: g.color || "#c0392b" }}>
@@ -271,7 +306,7 @@ export default function ChatPage({ user }: { user: User }) {
               const active = target?.kind === "user" && target.id === c.id;
               return (
                 <button key={c.id}
-                  onClick={() => { setTarget({ kind: "user", id: c.id, name: c.name, avatar: c.avatar }); setListOpen(false); }}
+                  onClick={() => { setTarget({ kind: "user", id: c.id, name: c.name, avatar: c.avatar }); setListOpen(false); setMsgSearch(""); }}
                   className={`w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors ${active ? "bg-muted" : "hover:bg-muted/50"}`}>
                   <span className="relative flex-shrink-0">
                     <span className="w-9 h-9 rounded-full red-accent flex items-center justify-center">
@@ -337,13 +372,50 @@ export default function ChatPage({ user }: { user: User }) {
                 </div>
               </div>
 
-              <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-muted/20">
-                {!messages.length && (
-                  <p className="text-center text-sm text-muted-foreground font-ibm py-8">
-                    {target.kind === "group" ? "Напишите первое сообщение группе" : "Сообщений пока нет"}
+              {pinned.length > 0 && !msgSearch && (
+                <div className="px-4 py-2 border-b border-border bg-accent/5 space-y-1.5">
+                  {pinned.map(m => (
+                    <div key={m.id} className="flex items-center gap-2">
+                      <Icon name="Pin" size={13} className="text-accent flex-shrink-0" />
+                      <p className="text-xs font-ibm text-foreground truncate flex-1">
+                        {m.text || m.file_name || "Вложение"}
+                      </p>
+                      <button onClick={() => togglePin(m, false)} title="Открепить"
+                        className="text-muted-foreground hover:text-foreground flex-shrink-0">
+                        <Icon name="X" size={13} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="px-4 py-2 border-b border-border">
+                <div className="relative">
+                  <Icon name="Search" size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                  <input value={msgSearch} onChange={e => setMsgSearch(e.target.value)}
+                    placeholder="Поиск по сообщениям"
+                    className="w-full pl-8 pr-8 py-1.5 rounded-lg border border-border bg-muted/30 text-sm font-ibm outline-none focus:border-primary/40" />
+                  {msgSearch && (
+                    <button onClick={() => setMsgSearch("")}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                      <Icon name="X" size={14} />
+                    </button>
+                  )}
+                </div>
+                {msgSearch && (
+                  <p className="text-xs text-muted-foreground font-ibm mt-1.5">
+                    Найдено: {shown.length}
                   </p>
                 )}
-                {messages.map(m => {
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-muted/20">
+                {!shown.length && (
+                  <p className="text-center text-sm text-muted-foreground font-ibm py-8">
+                    {msgSearch ? "Ничего не найдено" : target.kind === "group" ? "Напишите первое сообщение группе" : "Сообщений пока нет"}
+                  </p>
+                )}
+                {shown.map(m => {
                   const mine = m.from_user_id === Number(user.id);
                   const editing = editId === m.id;
                   return (
@@ -356,6 +428,10 @@ export default function ChatPage({ user }: { user: User }) {
                               <Icon name="Pencil" size={12} />
                             </button>
                           )}
+                          <button onClick={() => togglePin(m, !m.pinned_at)} title={m.pinned_at ? "Открепить" : "Закрепить"}
+                            className={`w-7 h-7 rounded-lg border border-border bg-card flex items-center justify-center ${m.pinned_at ? "text-accent" : "text-muted-foreground hover:text-foreground"}`}>
+                            <Icon name="Pin" size={12} />
+                          </button>
                           <button onClick={() => setDelMsg(m)} title="Удалить"
                             className="w-7 h-7 rounded-lg border border-border bg-card flex items-center justify-center text-muted-foreground hover:text-red-600">
                             <Icon name="Trash2" size={12} />
@@ -363,10 +439,16 @@ export default function ChatPage({ user }: { user: User }) {
                         </div>
                       )}
                       {!mine && (
-                        <button onClick={() => setDelMsg(m)} title="Удалить у себя"
-                          className="order-2 w-7 h-7 rounded-lg border border-border bg-card flex items-center justify-center text-muted-foreground hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <Icon name="Trash2" size={12} />
-                        </button>
+                        <div className="order-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button onClick={() => togglePin(m, !m.pinned_at)} title={m.pinned_at ? "Открепить" : "Закрепить"}
+                            className={`w-7 h-7 rounded-lg border border-border bg-card flex items-center justify-center ${m.pinned_at ? "text-accent" : "text-muted-foreground hover:text-foreground"}`}>
+                            <Icon name="Pin" size={12} />
+                          </button>
+                          <button onClick={() => setDelMsg(m)} title="Удалить у себя"
+                            className="w-7 h-7 rounded-lg border border-border bg-card flex items-center justify-center text-muted-foreground hover:text-red-600">
+                            <Icon name="Trash2" size={12} />
+                          </button>
+                        </div>
                       )}
 
                       <div className={`max-w-[80%] sm:max-w-md rounded-2xl px-3.5 py-2

@@ -235,6 +235,11 @@ export async function apiChatPing() {
   return r.data as { ok?: boolean; unread?: number; messages?: UnreadMessage[]; error?: string };
 }
 
+export async function apiPinMessage(id: number, pin: boolean) {
+  const r = await request(API_URL + "?p=chat_pin", { method: "POST", body: JSON.stringify({ id, pin }) });
+  return r.data as { ok?: boolean; error?: string };
+}
+
 export async function apiSetTyping(peerId: number) {
   await request(API_URL + "?p=chat_typing", { method: "POST", body: JSON.stringify({ peer_id: peerId }) });
 }
@@ -422,6 +427,7 @@ export interface ChatMessage {
   audio_sec?: number;
   group_id?: number | null;
   edited_at?: string | null;
+  pinned_at?: string | null;
 }
 
 export interface ChatContact {

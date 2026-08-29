@@ -97,6 +97,9 @@ def handler(event: dict, context) -> dict:
         if path == "chat_ping" and method == "POST":
             return chat_ping(conn, user_id)
 
+        if path == "chat_pin" and method == "POST":
+            return pin_message(event, conn, user_id)
+
         if path == "chat_typing" and method == "POST":
             return set_typing(event, conn, user_id)
 
@@ -421,7 +424,8 @@ MSG_SELECT = """SELECT m.id, m.from_user_id, m.to_user_id, m.text, m.is_read, m.
                        u.name as from_name, u.avatar as from_avatar,
                        COALESCE(m.file_url,'') as file_url, COALESCE(m.file_name,'') as file_name,
                        COALESCE(m.file_type,'') as file_type, COALESCE(m.audio_sec,0) as audio_sec,
-                       m.group_id, m.edited_at, COALESCE(m.removed_for_all,FALSE) as removed_for_all
+                       m.group_id, m.edited_at, COALESCE(m.removed_for_all,FALSE) as removed_for_all,
+                       m.pinned_at
                 FROM messages m JOIN users u ON u.id=m.from_user_id"""
 
 def _visible(user_id):
@@ -466,6 +470,25 @@ ONLINE_SEC = 120
 UNREAD_ALERT_MIN = 15
 EDIT_WINDOW_MIN = 60
 TYPING_SEC = 6
+
+def pin_message(event, conn, user_id):
+    """Закрепить или открепить сообщение в переписке."""
+    body = json.loads(event.get("body") or "{}")
+    msg_id = body.get("id")
+    pin = bool(body.get("pin", True))
+    if not msg_id:
+        conn.close()
+        return resp(400, {"error": "Укажите сообщение"})
+    cur = conn.cursor()
+    cur.execute("SELECT from_user_id, to_user_id FROM messages WHERE id=%s", (msg_id,))
+    row = cur.fetchone()
+    if not row or user_id not in (row[0], row[1]):
+        cur.close(); conn.close()
+        return resp(403, {"error": "Нет доступа к этому сообщению"})
+    cur.execute("UPDATE messages SET pinned_at=%s WHERE id=%s",
+                (datetime.now() if pin else None, msg_id))
+    conn.commit(); cur.close(); conn.close()
+    return resp(200, {"ok": True})
 
 def set_typing(event, conn, user_id):
     """Отметить, что пользователь печатает собеседнику."""

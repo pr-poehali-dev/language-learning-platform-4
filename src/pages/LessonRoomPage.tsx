@@ -16,9 +16,10 @@ interface Props {
   user: User;
   initialRoom?: string | null;
   onLeave?: () => void;
+  onOpenChat?: (studentIds: number[]) => void;
 }
 
-export default function LessonRoomPage({ user, initialRoom, onLeave }: Props) {
+export default function LessonRoomPage({ user, initialRoom, onLeave, onOpenChat }: Props) {
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [loading, setLoading] = useState(true);
   const [room, setRoom] = useState<string | null>(initialRoom || null);
@@ -82,6 +83,13 @@ export default function LessonRoomPage({ user, initialRoom, onLeave }: Props) {
     setRoom(name ? `hispania-${name}` : "hispania-room");
   };
 
+  const activeLesson = room ? lessons.find(l => buildRoomName(l) === room) : undefined;
+
+  const openLessonChat = () => {
+    if (!onOpenChat) return;
+    onOpenChat((activeLesson?.students || []).map(s => s.id));
+  };
+
   if (room) {
     const url = buildRoomUrl(room, user.name);
     return (
@@ -106,6 +114,13 @@ export default function LessonRoomPage({ user, initialRoom, onLeave }: Props) {
               <Icon name="ExternalLink" size={15} />
               В новом окне
             </a>
+            {onOpenChat && (
+              <button onClick={openLessonChat} title="Открыть чат урока"
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-border text-sm font-montserrat font-medium text-foreground hover:bg-muted transition-colors">
+                <Icon name="MessageSquare" size={15} />
+                Чат
+              </button>
+            )}
             <button onClick={() => { setRoom(null); onLeave?.(); }}
               className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-red-600 text-white text-sm font-montserrat font-medium hover:bg-red-700 transition-colors">
               <Icon name="PhoneOff" size={15} />
