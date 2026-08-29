@@ -378,8 +378,14 @@ export default function ChatPage({ user }: { user: User }) {
                           <>
                             {m.text && <p className="text-sm font-ibm whitespace-pre-wrap break-words">{m.text}</p>}
                             <Attachment m={m} />
-                            <p className={`text-[10px] mt-1 ${mine ? "text-white/70" : "text-muted-foreground"}`}>
-                              {timeOf(m.created_at)}{m.edited_at ? " · изменено" : ""}
+                            <p className={`text-[10px] mt-1 flex items-center gap-1 ${mine ? "text-white/70 justify-end" : "text-muted-foreground"}`}>
+                              <span>{timeOf(m.created_at)}{m.edited_at ? " · изменено" : ""}</span>
+                              {mine && (
+                                <span title={m.is_read ? "Прочитано" : "Отправлено"} className="flex items-center">
+                                  <Icon name={m.is_read ? "CheckCheck" : "Check"} size={13}
+                                    className={m.is_read ? "text-white" : "text-white/60"} />
+                                </span>
+                              )}
                             </p>
                           </>
                         )}
