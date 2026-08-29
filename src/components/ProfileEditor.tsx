@@ -5,7 +5,7 @@ import { apiGetProfile, apiUpdateProfile, type Profile } from "@/lib/api";
 const empty: Profile = {
   id: 0, name: "", email: "", role: "",
   phone: "", social_name: "", social_url: "", telegram: "", whatsapp: "", about: "",
-  notify_email: true, notify_new_lesson: true, notify_cancel: true,
+  notify_email: true, notify_new_lesson: true, notify_cancel: true, notify_chat: true,
 };
 
 function Toggle({ checked, onChange, title, hint }: {
@@ -130,17 +130,21 @@ export default function ProfileEditor({ isTeacher }: { isTeacher: boolean }) {
           </div>
         </div>
 
-        {isTeacher && (
-          <div className="bg-card rounded-xl border border-border p-5 space-y-2">
-            <h3 className="font-montserrat font-bold text-sm text-foreground mb-1">Уведомления на почту</h3>
-            <Toggle checked={!!p.notify_email} onChange={v => set("notify_email", v)}
-              title="Получать письма" hint="Главный выключатель всех писем" />
-            <Toggle checked={!!p.notify_new_lesson} onChange={v => set("notify_new_lesson", v)}
-              title="О новых занятиях" hint="Когда занятие поставлено в расписание" />
-            <Toggle checked={!!p.notify_cancel} onChange={v => set("notify_cancel", v)}
-              title="Об отменах" hint="Ученик заболел или занятие отменено" />
-          </div>
-        )}
+        <div className="bg-card rounded-xl border border-border p-5 space-y-2">
+          <h3 className="font-montserrat font-bold text-sm text-foreground mb-1">Уведомления на почту</h3>
+          <Toggle checked={!!p.notify_email} onChange={v => set("notify_email", v)}
+            title="Получать письма" hint="Главный выключатель всех писем" />
+          <Toggle checked={!!p.notify_chat} onChange={v => set("notify_chat", v)}
+            title="О непрочитанных сообщениях" hint="Если не открыли чат более 15 минут" />
+          {isTeacher && (
+            <>
+              <Toggle checked={!!p.notify_new_lesson} onChange={v => set("notify_new_lesson", v)}
+                title="О новых занятиях" hint="Когда занятие поставлено в расписание" />
+              <Toggle checked={!!p.notify_cancel} onChange={v => set("notify_cancel", v)}
+                title="Об отменах" hint="Ученик заболел или занятие отменено" />
+            </>
+          )}
+        </div>
 
         {err && (
           <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-red-50 border border-red-200">

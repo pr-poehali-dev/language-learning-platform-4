@@ -13,6 +13,8 @@ import LoginPage, { type User } from "./pages/LoginPage";
 import Sidebar from "./components/Sidebar";
 import TopBar from "./components/TopBar";
 import Footer from "./components/Footer";
+import ChatToasts from "./components/ChatToasts";
+import { ChatAlertsProvider } from "./hooks/useChatAlerts";
 import { apiMe, apiLogout } from "./lib/api";
 
 export type Page = "dashboard" | "calendar" | "lesson" | "materials" | "homework" | "students" | "chat" | "profile";
@@ -81,7 +83,9 @@ export default function App() {
 
   return (
     <TooltipProvider>
+    <ChatAlertsProvider enabled={!!user}>
       <Toaster />
+      <ChatToasts onNavigate={setActivePage} />
       <div className="flex h-screen bg-background overflow-hidden">
         <Sidebar
           activePage={activePage}
@@ -109,6 +113,7 @@ export default function App() {
           <Footer />
         </div>
       </div>
+    </ChatAlertsProvider>
     </TooltipProvider>
   );
 }

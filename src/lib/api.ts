@@ -108,6 +108,7 @@ export interface Profile {
   notify_email?: boolean;
   notify_new_lesson?: boolean;
   notify_cancel?: boolean;
+  notify_chat?: boolean;
 }
 
 export async function apiGetProfile() {
@@ -219,6 +220,19 @@ export async function apiGetMessages(withUserId?: number) {
   const url = withUserId ? `${API_URL}?p=chat&with=${withUserId}` : `${API_URL}?p=chat`;
   const r = await request(url);
   return r.data as { messages?: ChatMessage[]; error?: string };
+}
+
+export interface UnreadMessage {
+  id: number;
+  from_user_id: number;
+  from_name: string;
+  preview: string;
+  created_at: string;
+}
+
+export async function apiChatPing() {
+  const r = await request(API_URL + "?p=chat_ping", { method: "POST", body: "{}" });
+  return r.data as { ok?: boolean; unread?: number; messages?: UnreadMessage[]; error?: string };
 }
 
 export async function apiGetChatContacts() {

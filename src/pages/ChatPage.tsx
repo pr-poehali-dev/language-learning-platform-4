@@ -5,6 +5,7 @@ import {
   apiGetChatContacts, apiGetMessages, apiSendMessage,
   type ChatMessage, type ChatContact, type ChatGroup,
 } from "@/lib/api";
+import { useChatAlerts } from "@/hooks/useChatAlerts";
 
 type Target = { kind: "user"; id: number; name: string; avatar: string }
             | { kind: "group"; id: number; name: string; count: number };
@@ -49,6 +50,7 @@ function Attachment({ m }: { m: ChatMessage }) {
 
 export default function ChatPage({ user }: { user: User }) {
   const isTeacher = user.role === "teacher";
+  const { refresh } = useChatAlerts();
   const [contacts, setContacts] = useState<ChatContact[]>([]);
   const [groups, setGroups] = useState<ChatGroup[]>([]);
   const [target, setTarget] = useState<Target | null>(null);
@@ -87,8 +89,12 @@ export default function ChatPage({ user }: { user: User }) {
       }).catch(() => {});
       return;
     }
-    apiGetMessages(target.id).then(res => setMessages(res.messages || [])).catch(() => {});
-  }, [target, groups]);
+    apiGetMessages(target.id).then(res => {
+      setMessages(res.messages || []);
+      refresh();
+      loadContacts();
+    }).catch(() => {});
+  }, [target, groups, refresh, loadContacts]);
 
   useEffect(() => { loadMessages(); }, [loadMessages]);
 

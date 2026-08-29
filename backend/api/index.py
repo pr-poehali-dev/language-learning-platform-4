@@ -15,7 +15,7 @@ import json
 import os
 from datetime import datetime, timedelta
 import psycopg2
-from mailer import send_email, lesson_started_email, lesson_reminder_email
+from mailer import send_email, lesson_started_email, lesson_reminder_email, _wrap
 
 JITSI_HOST = "hispania-35.ru"
 MONTHS_RU = ["января", "февраля", "марта", "апреля", "мая", "июня",
@@ -94,6 +94,9 @@ def handler(event: dict, context) -> dict:
                 return delete_lesson(event, conn, user_id, role)
 
         # --- Chat ---
+        if path == "chat_ping" and method == "POST":
+            return chat_ping(conn, user_id)
+
         if path == "chat_contacts" and method == "GET":
             return get_chat_contacts(conn, user_id, role)
 
@@ -441,6 +444,57 @@ def get_messages(event, conn, user_id):
     cur.close(); conn.close()
     return resp(200, {"messages": messages})
 
+ONLINE_SEC = 120
+UNREAD_ALERT_MIN = 15
+
+def chat_ping(conn, user_id):
+    """Отметить пользователя в сети, вернуть непрочитанные и разослать письма о забытых сообщениях."""
+    cur = conn.cursor()
+    cur.execute("UPDATE users SET last_seen=NOW() WHERE id=%s", (user_id,))
+
+    cur.execute(
+        """SELECT m.id, m.from_user_id, u.name, COALESCE(NULLIF(m.text,''), m.file_name, 'Вложение'), m.created_at
+           FROM messages m JOIN users u ON u.id=m.from_user_id
+           WHERE m.to_user_id=%s AND m.is_read=FALSE
+           ORDER BY m.created_at DESC LIMIT 30""",
+        (user_id,)
+    )
+    rows = cur.fetchall()
+    unread = [{"id": r[0], "from_user_id": r[1], "from_name": r[2], "preview": r[3], "created_at": r[4]} for r in rows]
+
+    sent = _send_unread_digests(cur)
+    conn.commit(); cur.close(); conn.close()
+    return resp(200, {"ok": True, "unread": len(unread), "messages": unread, "emails_sent": sent})
+
+def _send_unread_digests(cur):
+    """Письмо «у вас есть непрочитанные сообщения» тем, кто не в сети и не читал 15+ минут."""
+    cur.execute(
+        f"""SELECT u.id, u.name, u.email, COUNT(m.id)
+            FROM messages m JOIN users u ON u.id=m.to_user_id
+            WHERE m.is_read=FALSE AND COALESCE(m.email_notified,FALSE)=FALSE
+              AND m.created_at < NOW() - INTERVAL '{UNREAD_ALERT_MIN} minutes'
+              AND COALESCE(u.notify_email,TRUE) AND COALESCE(u.notify_chat,TRUE)
+              AND (u.last_seen IS NULL OR u.last_seen < NOW() - INTERVAL '{ONLINE_SEC} seconds')
+            GROUP BY u.id, u.name, u.email
+            LIMIT 10"""
+    )
+    targets = cur.fetchall()
+    sent = 0
+    for uid, uname, uemail, cnt in targets:
+        word = "сообщение" if cnt == 1 else ("сообщения" if cnt < 5 else "сообщений")
+        html = _wrap("У вас есть непрочитанные сообщения", [
+            f"Здравствуйте, {uname}!",
+            f"В чате платформы вас ждёт <b>{cnt} непрочитанных {word}</b>.",
+            "Загляните в раздел «Чат», чтобы ответить.",
+        ])
+        if send_email(uemail, f"Непрочитанных сообщений: {cnt}", html):
+            sent += 1
+        cur.execute(
+            "UPDATE messages SET email_notified=TRUE WHERE to_user_id=%s AND is_read=FALSE AND email_notified=FALSE",
+            (uid,)
+        )
+    return sent
+
 def get_chat_contacts(conn, user_id, role):
     """Список собеседников с последним сообщением и счётчиком непрочитанного."""
     cur = conn.cursor()
@@ -594,7 +648,7 @@ def mark_notifications_read(conn, user_id):
 
 PROFILE_COLS = ["id", "name", "email", "role", "level", "avatar", "phone",
                 "social_name", "social_url", "telegram", "whatsapp", "about",
-                "notify_email", "notify_new_lesson", "notify_cancel"]
+                "notify_email", "notify_new_lesson", "notify_cancel", "notify_chat"]
 
 def get_profile(conn, user_id):
     cur = conn.cursor()
@@ -603,7 +657,7 @@ def get_profile(conn, user_id):
                   COALESCE(phone,''), COALESCE(social_name,''), COALESCE(social_url,''),
                   COALESCE(telegram,''), COALESCE(whatsapp,''), COALESCE(about,''),
                   COALESCE(notify_email,TRUE), COALESCE(notify_new_lesson,TRUE),
-                  COALESCE(notify_cancel,TRUE)
+                  COALESCE(notify_cancel,TRUE), COALESCE(notify_chat,TRUE)
            FROM users WHERE id=%s""", (user_id,)
     )
     row = cur.fetchone()
@@ -636,14 +690,14 @@ def update_profile(event, conn, user_id):
     cur.execute(
         """UPDATE users SET name=%s, email=%s, phone=%s, social_name=%s, social_url=%s,
                telegram=%s, whatsapp=%s, about=%s,
-               notify_email=%s, notify_new_lesson=%s, notify_cancel=%s
+               notify_email=%s, notify_new_lesson=%s, notify_cancel=%s, notify_chat=%s
            WHERE id=%s""",
         (name, email, (body.get("phone") or "").strip(),
          (body.get("social_name") or "").strip(), (body.get("social_url") or "").strip(),
          (body.get("telegram") or "").strip(), (body.get("whatsapp") or "").strip(),
          (body.get("about") or "").strip(),
          flag("notify_email"), flag("notify_new_lesson"), flag("notify_cancel"),
-         user_id)
+         flag("notify_chat"), user_id)
     )
     conn.commit(); cur.close()
     return get_profile(conn, user_id)

@@ -1,6 +1,7 @@
 import { type Page } from "@/App";
 import { type User } from "@/pages/LoginPage";
 import Icon from "@/components/ui/icon";
+import { useChatAlerts } from "@/hooks/useChatAlerts";
 
 const studentNav = [
   { id: "dashboard" as Page, label: "Главная", icon: "LayoutDashboard" },
@@ -35,6 +36,7 @@ interface SidebarProps {
 export default function Sidebar({ activePage, onNavigate, isOpen, onClose, user, onOpenSettings }: SidebarProps) {
   const navItems = user.role === "teacher" ? teacherNav : studentNav;
   const isTeacher = user.role === "teacher";
+  const { unread, soundOn, setSoundOn } = useChatAlerts();
 
   return (
     <>
@@ -107,18 +109,32 @@ export default function Sidebar({ activePage, onNavigate, isOpen, onClose, user,
               >
                 <Icon name={item.icon} size={18} className="flex-shrink-0" />
                 <span className="font-ibm">{item.label}</span>
-                {"badge" in item && item.badge && (
+                {item.id === "chat" && unread > 0 ? (
+                  <span className="ml-auto bg-accent text-accent-foreground text-xs font-bold px-1.5 py-0.5 rounded-full font-montserrat">
+                    {unread > 99 ? "99+" : unread}
+                  </span>
+                ) : "badge" in item && item.badge ? (
                   <span className="ml-auto bg-accent text-accent-foreground text-xs font-bold px-1.5 py-0.5 rounded-full font-montserrat">
                     {item.badge}
                   </span>
-                )}
+                ) : null}
               </button>
             );
           })}
         </nav>
 
         {/* Bottom */}
-        <div className="px-3 pb-4 border-t border-sidebar-border pt-3">
+        <div className="px-3 pb-4 border-t border-sidebar-border pt-3 space-y-1">
+          <button onClick={() => setSoundOn(!soundOn)}
+            title={soundOn ? "Выключить звук уведомлений" : "Включить звук уведомлений"}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-sidebar-foreground/50 hover:text-sidebar-foreground hover:bg-sidebar-accent/60 transition-all duration-150">
+            <Icon name={soundOn ? "Volume2" : "VolumeX"} size={18} />
+            <span className="font-ibm">Звук сообщений</span>
+            <span className={`ml-auto text-xs font-montserrat font-bold ${soundOn ? "text-accent" : "text-sidebar-foreground/40"}`}>
+              {soundOn ? "вкл" : "выкл"}
+            </span>
+          </button>
+
           <button onClick={() => { onOpenSettings(); onClose(); }} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-sidebar-foreground/50 hover:text-sidebar-foreground hover:bg-sidebar-accent/60 transition-all duration-150">
             <Icon name="Settings" size={18} />
             <span className="font-ibm">Настройки</span>
