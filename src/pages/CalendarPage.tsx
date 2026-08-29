@@ -366,6 +366,9 @@ export default function CalendarPage({ user, onJoinLesson }: { user: User; onJoi
                             className={`relative rounded-md ${isDropOver ? "ring-2 ring-primary ring-offset-1" : ""}`}
                           >
                             <button
+                              title={lesson
+                                ? `${lesson.topic} · ${time}${isTeacher ? " — нажмите, чтобы начать урок или изменить" : ""}`
+                                : "Свободное время"}
                               draggable={isTeacher && !!lesson}
                               onDragStart={() => lesson && setDragId(lesson.id)}
                               onDragEnd={() => { setDragId(null); setDropTarget(null); }}
@@ -418,6 +421,10 @@ export default function CalendarPage({ user, onJoinLesson }: { user: User; onJoi
             <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-green-500" /><span>Свободно</span></div>
             <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-orange-300" /><span>Занятие назначено</span></div>
             <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-gray-200" /><span>Прошло</span></div>
+            <div className="flex items-center gap-1.5 w-full sm:w-auto text-muted-foreground/80">
+              <Icon name="Info" size={13} className="flex-shrink-0" />
+              <span>Прошедшее занятие можно открыть и посмотреть{isTeacher ? " или перенести" : ""}</span>
+            </div>
           </div>
         </div>
 
@@ -700,6 +707,19 @@ export default function CalendarPage({ user, onJoinLesson }: { user: User; onJoi
             <p className="text-sm text-muted-foreground font-ibm mb-4">Что сделать с этим занятием?</p>
 
             <div className="space-y-2">
+              <button onClick={() => {
+                  apiStartLesson(actionLesson.id).catch(() => {});
+                  onJoinLesson?.(buildRoomName(actionLesson));
+                  setActionLesson(null);
+                }}
+                className="w-full flex items-center gap-3 px-4 py-3 rounded-lg red-accent text-white hover:opacity-90 transition-opacity text-left">
+                <Icon name="Video" size={18} className="text-white" />
+                <div>
+                  <p className="text-sm font-montserrat font-bold text-white">Начать урок</p>
+                  <p className="text-xs text-white/80 font-ibm">Видеосвязь и приглашения ученикам</p>
+                </div>
+              </button>
+
               <button onClick={() => { openEdit(actionLesson); setActionLesson(null); }}
                 className="w-full flex items-center gap-3 px-4 py-3 rounded-lg border border-border hover:bg-muted transition-colors text-left">
                 <Icon name="Pencil" size={18} className="text-primary" />
