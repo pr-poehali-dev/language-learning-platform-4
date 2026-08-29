@@ -26,7 +26,7 @@ export default function LessonRoomPage({ user, initialRoom, onLeave }: Props) {
   const [customRoom, setCustomRoom] = useState("");
   const [notice, setNotice] = useState("");
   const [chatOpen, setChatOpen] = useState(false);
-  const { setInLesson } = useChatAlerts();
+  const { setInLesson, unread } = useChatAlerts();
 
   useEffect(() => {
     setInLesson(!!room);
@@ -113,10 +113,18 @@ export default function LessonRoomPage({ user, initialRoom, onLeave }: Props) {
               В новом окне
             </a>
             <button onClick={() => setChatOpen(v => !v)} title="Чат урока"
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg border text-sm font-montserrat font-medium transition-colors
+              className={`relative flex items-center gap-1.5 px-3 py-2 rounded-lg border text-sm font-montserrat font-medium transition-colors
                 ${chatOpen ? "red-accent text-white border-transparent" : "border-border text-foreground hover:bg-muted"}`}>
               <Icon name="MessageSquare" size={15} />
               Чат
+              {!chatOpen && unread > 0 && (
+                <>
+                  <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-red-600 animate-ping" />
+                  <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-red-600 text-white text-[10px] font-montserrat font-bold flex items-center justify-center">
+                    {unread > 9 ? "9+" : unread}
+                  </span>
+                </>
+              )}
             </button>
             <button onClick={() => { setRoom(null); onLeave?.(); }}
               className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-red-600 text-white text-sm font-montserrat font-medium hover:bg-red-700 transition-colors">
