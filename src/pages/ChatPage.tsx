@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import Icon from "@/components/ui/icon";
 import { type User } from "@/pages/LoginPage";
 import {
-  apiGetChatContacts, apiGetMessages, apiSendMessage, apiEditMessage, apiDeleteMessage,
+  apiGetChatContacts, apiGetMessages, apiSendMessage, apiEditMessage, apiDeleteMessage, apiSetTyping,
   type ChatMessage, type ChatContact, type ChatGroup,
 } from "@/lib/api";
 import { useChatAlerts } from "@/hooks/useChatAlerts";
@@ -61,6 +61,8 @@ export default function ChatPage({ user }: { user: User }) {
   const [search, setSearch] = useState("");
   const [listOpen, setListOpen] = useState(true);
 
+  const [peerTyping, setPeerTyping] = useState(false);
+  const typingSentRef = useRef(0);
   const [editId, setEditId] = useState<number | null>(null);
   const [editText, setEditText] = useState("");
   const [delMsg, setDelMsg] = useState<ChatMessage | null>(null);
@@ -98,6 +100,7 @@ export default function ChatPage({ user }: { user: User }) {
     }
     apiGetMessages(target.id).then(res => {
       setMessages(res.messages || []);
+      setPeerTyping(!!res.typing);
       refresh();
       loadContacts();
     }).catch(() => {});
@@ -107,13 +110,13 @@ export default function ChatPage({ user }: { user: User }) {
 
   useEffect(() => {
     if (!target) return;
-    const t = setInterval(loadMessages, 8000);
+    const t = setInterval(loadMessages, 3500);
     return () => clearInterval(t);
   }, [target, loadMessages]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [messages, peerTyping]);
 
   const toBase64 = (file: Blob): Promise<string> =>
     new Promise((resolve, reject) => {
@@ -166,6 +169,15 @@ export default function ChatPage({ user }: { user: User }) {
       rec.stop();
     }
     setRecording(false);
+  };
+
+  const onType = (v: string) => {
+    setText(v);
+    if (!target || target.kind !== "user" || !v.trim()) return;
+    const now = Date.now();
+    if (now - typingSentRef.current < 3000) return;
+    typingSentRef.current = now;
+    apiSetTyping(target.id).catch(() => {});
   };
 
   const saveEdit = async () => {
@@ -317,9 +329,9 @@ export default function ChatPage({ user }: { user: User }) {
                   {target.kind === "group" ? (
                     <p className="text-xs text-muted-foreground font-ibm">Рассылка · {target.count} учеников</p>
                   ) : (
-                    <p className={`text-xs font-ibm flex items-center gap-1 ${targetOnline ? "text-green-600" : "text-muted-foreground"}`}>
-                      {targetOnline && <span className="w-1.5 h-1.5 rounded-full bg-green-500" />}
-                      {targetOnline ? "В сети" : "Не в сети"}
+                    <p className={`text-xs font-ibm flex items-center gap-1 ${peerTyping ? "text-primary" : targetOnline ? "text-green-600" : "text-muted-foreground"}`}>
+                      {!peerTyping && targetOnline && <span className="w-1.5 h-1.5 rounded-full bg-green-500" />}
+                      {peerTyping ? "печатает..." : targetOnline ? "В сети" : "Не в сети"}
                     </p>
                   )}
                 </div>
@@ -393,6 +405,16 @@ export default function ChatPage({ user }: { user: User }) {
                     </div>
                   );
                 })}
+                {peerTyping && target.kind === "user" && (
+                  <div className="flex justify-start">
+                    <div className="bg-card border border-border rounded-2xl rounded-bl-sm px-4 py-3 flex items-center gap-1">
+                      {[0, 150, 300].map(d => (
+                        <span key={d} className="w-1.5 h-1.5 rounded-full bg-muted-foreground/60 animate-bounce"
+                          style={{ animationDelay: `${d}ms` }} />
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <div ref={bottomRef} />
               </div>
 
@@ -441,7 +463,7 @@ export default function ChatPage({ user }: { user: User }) {
                       <Icon name="Mic" size={18} />
                     </button>
 
-                    <textarea rows={1} value={text} onChange={e => setText(e.target.value)}
+                    <textarea rows={1} value={text} onChange={e => onType(e.target.value)}
                       onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
                       placeholder={target.kind === "group" ? `Сообщение группе «${target.name}»` : "Написать сообщение..."}
                       className="flex-1 px-3 py-2.5 rounded-lg border border-border bg-muted/30 text-sm font-ibm outline-none focus:border-primary/40 resize-none max-h-32" />

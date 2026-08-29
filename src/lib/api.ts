@@ -219,7 +219,7 @@ export async function apiDeleteLesson(id: number) {
 export async function apiGetMessages(withUserId?: number) {
   const url = withUserId ? `${API_URL}?p=chat&with=${withUserId}` : `${API_URL}?p=chat`;
   const r = await request(url);
-  return r.data as { messages?: ChatMessage[]; error?: string };
+  return r.data as { messages?: ChatMessage[]; typing?: boolean; error?: string };
 }
 
 export interface UnreadMessage {
@@ -233,6 +233,10 @@ export interface UnreadMessage {
 export async function apiChatPing() {
   const r = await request(API_URL + "?p=chat_ping", { method: "POST", body: "{}" });
   return r.data as { ok?: boolean; unread?: number; messages?: UnreadMessage[]; error?: string };
+}
+
+export async function apiSetTyping(peerId: number) {
+  await request(API_URL + "?p=chat_typing", { method: "POST", body: JSON.stringify({ peer_id: peerId }) });
 }
 
 export async function apiGetChatContacts() {

@@ -97,6 +97,9 @@ def handler(event: dict, context) -> dict:
         if path == "chat_ping" and method == "POST":
             return chat_ping(conn, user_id)
 
+        if path == "chat_typing" and method == "POST":
+            return set_typing(event, conn, user_id)
+
         if path == "chat_contacts" and method == "GET":
             return get_chat_contacts(conn, user_id, role)
 
@@ -445,16 +448,40 @@ def get_messages(event, conn, user_id):
     cols = [d[0] for d in cur.description]
     messages = [dict(zip(cols, r)) for r in rows]
 
+    typing = False
     if other_id:
         cur.execute("UPDATE messages SET is_read=TRUE WHERE to_user_id=%s AND from_user_id=%s AND is_read=FALSE",
                     (user_id, int(other_id)))
+        cur.execute(
+            f"""SELECT 1 FROM typing_status
+                WHERE user_id=%s AND peer_id=%s AND updated_at > NOW() - INTERVAL '{TYPING_SEC} seconds'""",
+            (int(other_id), user_id)
+        )
+        typing = cur.fetchone() is not None
         conn.commit()
     cur.close(); conn.close()
-    return resp(200, {"messages": messages})
+    return resp(200, {"messages": messages, "typing": typing})
 
 ONLINE_SEC = 120
 UNREAD_ALERT_MIN = 15
 EDIT_WINDOW_MIN = 60
+TYPING_SEC = 6
+
+def set_typing(event, conn, user_id):
+    """Отметить, что пользователь печатает собеседнику."""
+    body = json.loads(event.get("body") or "{}")
+    peer_id = body.get("peer_id")
+    if not peer_id:
+        conn.close()
+        return resp(400, {"error": "Укажите собеседника"})
+    cur = conn.cursor()
+    cur.execute(
+        """INSERT INTO typing_status (user_id, peer_id, updated_at) VALUES (%s,%s,NOW())
+           ON CONFLICT (user_id, peer_id) DO UPDATE SET updated_at=NOW()""",
+        (user_id, int(peer_id))
+    )
+    conn.commit(); cur.close(); conn.close()
+    return resp(200, {"ok": True})
 
 def edit_message(event, conn, user_id):
     body = json.loads(event.get("body") or "{}")
