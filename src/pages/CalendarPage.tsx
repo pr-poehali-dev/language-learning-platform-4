@@ -32,6 +32,7 @@ const getMonday = (d: Date) => {
 export default function CalendarPage({ user, onJoinLesson }: { user: User; onJoinLesson?: (room: string) => void }) {
   const today = new Date();
   const todayKey = toKey(today);
+  const nowTime = `${String(today.getHours()).padStart(2, "0")}:${String(today.getMinutes()).padStart(2, "0")}`;
   const currentMonday = getMonday(today);
   const isTeacher = user.role === "teacher";
 
@@ -378,7 +379,9 @@ export default function CalendarPage({ user, onJoinLesson }: { user: User; onJoi
                               }}
                               className={`w-full h-12 rounded-md text-xs font-montserrat font-bold transition-all duration-150 flex flex-col items-center justify-center gap-0.5 px-1
                                 ${lesson
-                                  ? "bg-orange-300 text-orange-900 hover:bg-orange-400 cursor-grab active:cursor-grabbing"
+                                  ? (isPast || (dateKey === todayKey && time < nowTime)
+                                      ? "bg-gray-200 text-gray-500 hover:bg-gray-300 cursor-grab active:cursor-grabbing"
+                                      : "bg-orange-300 text-orange-900 hover:bg-orange-400 cursor-grab active:cursor-grabbing")
                                   : "bg-green-500 text-white hover:bg-green-600"}
                                 ${isSelected ? "ring-2 ring-offset-1 ring-primary" : ""}
                                 ${dragId === lesson?.id ? "opacity-40" : ""}`}
