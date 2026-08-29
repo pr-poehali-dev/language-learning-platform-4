@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { useChatAlerts } from "@/hooks/useChatAlerts";
 import Icon from "@/components/ui/icon";
 import { apiGetCalendar, apiStartLesson, type Lesson } from "@/lib/api";
 import { type User } from "@/pages/LoginPage";
@@ -23,6 +24,12 @@ export default function LessonRoomPage({ user, initialRoom, onLeave }: Props) {
   const [room, setRoom] = useState<string | null>(initialRoom || null);
   const [customRoom, setCustomRoom] = useState("");
   const [notice, setNotice] = useState("");
+  const { setInLesson } = useChatAlerts();
+
+  useEffect(() => {
+    setInLesson(!!room);
+    return () => setInLesson(false);
+  }, [room, setInLesson]);
   const frameRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {

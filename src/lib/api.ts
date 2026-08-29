@@ -257,6 +257,18 @@ export async function apiSendMessage(payload: {
   return r.data as { ok?: boolean; id?: number; sent?: number; error?: string };
 }
 
+export async function apiEditMessage(id: number, text: string) {
+  const r = await request(API_URL + "?p=chat", { method: "PUT", body: JSON.stringify({ id, text }) });
+  return r.data as { ok?: boolean; error?: string };
+}
+
+export async function apiDeleteMessage(id: number, scope: "me" | "all") {
+  const r = await request(`${API_URL}?p=chat&id=${id}&scope=${scope}`, {
+    method: "DELETE", body: JSON.stringify({ id, scope }),
+  });
+  return r.data as { ok?: boolean; error?: string };
+}
+
 export async function apiGetNotifications() {
   const r = await request(API_URL + "?p=notifications");
   return r.data as { notifications?: Notification[]; unread?: number; error?: string };
@@ -405,6 +417,7 @@ export interface ChatMessage {
   file_type?: string;
   audio_sec?: number;
   group_id?: number | null;
+  edited_at?: string | null;
 }
 
 export interface ChatContact {
@@ -415,6 +428,7 @@ export interface ChatContact {
   last_text?: string;
   last_at?: string | null;
   unread?: number;
+  online?: boolean;
 }
 
 export interface ChatGroup {

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import Icon from "@/components/ui/icon";
 import { type User } from "@/pages/LoginPage";
 import {
-  apiGetChatContacts, apiGetMessages, apiSendMessage,
+  apiGetChatContacts, apiGetMessages, apiSendMessage, apiEditMessage, apiDeleteMessage,
   type ChatMessage, type ChatContact, type ChatGroup,
 } from "@/lib/api";
 import { useChatAlerts } from "@/hooks/useChatAlerts";
@@ -61,6 +61,9 @@ export default function ChatPage({ user }: { user: User }) {
   const [search, setSearch] = useState("");
   const [listOpen, setListOpen] = useState(true);
 
+  const [editId, setEditId] = useState<number | null>(null);
+  const [editText, setEditText] = useState("");
+  const [delMsg, setDelMsg] = useState<ChatMessage | null>(null);
   const [pending, setPending] = useState<{ name: string; type: string; mime: string; data: string; sec?: number } | null>(null);
   const [recording, setRecording] = useState(false);
   const [recSec, setRecSec] = useState(0);
@@ -77,7 +80,11 @@ export default function ChatPage({ user }: { user: User }) {
     }).catch(() => {});
   }, []);
 
-  useEffect(() => { loadContacts(); }, [loadContacts]);
+  useEffect(() => {
+    loadContacts();
+    const t = setInterval(loadContacts, 25000);
+    return () => clearInterval(t);
+  }, [loadContacts]);
 
   const loadMessages = useCallback(() => {
     if (!target) return;
@@ -161,6 +168,20 @@ export default function ChatPage({ user }: { user: User }) {
     setRecording(false);
   };
 
+  const saveEdit = async () => {
+    if (editId === null || !editText.trim()) return;
+    const res = await apiEditMessage(editId, editText.trim());
+    if (res.ok) { setEditId(null); loadMessages(); loadContacts(); }
+    else setErr(res.error || "Не удалось изменить");
+  };
+
+  const removeMsg = async (scope: "me" | "all") => {
+    if (!delMsg) return;
+    const res = await apiDeleteMessage(delMsg.id, scope);
+    if (res.ok) { setDelMsg(null); loadMessages(); loadContacts(); }
+    else setErr(res.error || "Не удалось удалить");
+  };
+
   const send = async () => {
     if (!target) return;
     if (!text.trim() && !pending) return;
@@ -186,6 +207,7 @@ export default function ChatPage({ user }: { user: User }) {
     }
   };
 
+  const targetOnline = target?.kind === "user" && !!contacts.find(c => c.id === target.id)?.online;
   const filtered = contacts.filter(c => c.name.toLowerCase().includes(search.toLowerCase()));
   const filteredGroups = groups.filter(g => g.name.toLowerCase().includes(search.toLowerCase()));
 
@@ -239,8 +261,13 @@ export default function ChatPage({ user }: { user: User }) {
                 <button key={c.id}
                   onClick={() => { setTarget({ kind: "user", id: c.id, name: c.name, avatar: c.avatar }); setListOpen(false); }}
                   className={`w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors ${active ? "bg-muted" : "hover:bg-muted/50"}`}>
-                  <span className="w-9 h-9 rounded-full red-accent flex items-center justify-center flex-shrink-0">
-                    <span className="text-white font-montserrat font-bold text-xs">{c.avatar}</span>
+                  <span className="relative flex-shrink-0">
+                    <span className="w-9 h-9 rounded-full red-accent flex items-center justify-center">
+                      <span className="text-white font-montserrat font-bold text-xs">{c.avatar}</span>
+                    </span>
+                    {c.online && (
+                      <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-green-500 border-2 border-card" />
+                    )}
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="flex items-center justify-between gap-2">
@@ -275,16 +302,26 @@ export default function ChatPage({ user }: { user: User }) {
                 <button onClick={() => setListOpen(true)} className="md:hidden text-muted-foreground">
                   <Icon name="ChevronLeft" size={20} />
                 </button>
-                <span className={`w-9 h-9 rounded-${target.kind === "group" ? "lg" : "full"} red-accent flex items-center justify-center flex-shrink-0`}>
-                  {target.kind === "group"
-                    ? <Icon name="Users" size={16} className="text-white" />
-                    : <span className="text-white font-montserrat font-bold text-xs">{target.avatar}</span>}
+                <span className="relative flex-shrink-0">
+                  <span className={`w-9 h-9 ${target.kind === "group" ? "rounded-lg" : "rounded-full"} red-accent flex items-center justify-center`}>
+                    {target.kind === "group"
+                      ? <Icon name="Users" size={16} className="text-white" />
+                      : <span className="text-white font-montserrat font-bold text-xs">{target.avatar}</span>}
+                  </span>
+                  {target.kind === "user" && targetOnline && (
+                    <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-green-500 border-2 border-card" />
+                  )}
                 </span>
                 <div className="min-w-0">
                   <p className="text-sm font-montserrat font-bold text-foreground truncate">{target.name}</p>
-                  <p className="text-xs text-muted-foreground font-ibm">
-                    {target.kind === "group" ? `Рассылка · ${target.count} учеников` : "Личная переписка"}
-                  </p>
+                  {target.kind === "group" ? (
+                    <p className="text-xs text-muted-foreground font-ibm">Рассылка · {target.count} учеников</p>
+                  ) : (
+                    <p className={`text-xs font-ibm flex items-center gap-1 ${targetOnline ? "text-green-600" : "text-muted-foreground"}`}>
+                      {targetOnline && <span className="w-1.5 h-1.5 rounded-full bg-green-500" />}
+                      {targetOnline ? "В сети" : "Не в сети"}
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -296,18 +333,56 @@ export default function ChatPage({ user }: { user: User }) {
                 )}
                 {messages.map(m => {
                   const mine = m.from_user_id === Number(user.id);
+                  const editing = editId === m.id;
                   return (
-                    <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
+                    <div key={m.id} className={`group flex items-end gap-1.5 ${mine ? "justify-end" : "justify-start"}`}>
+                      {mine && !editing && (
+                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          {!m.file_url && (
+                            <button onClick={() => { setEditId(m.id); setEditText(m.text); }} title="Изменить"
+                              className="w-7 h-7 rounded-lg border border-border bg-card flex items-center justify-center text-muted-foreground hover:text-foreground">
+                              <Icon name="Pencil" size={12} />
+                            </button>
+                          )}
+                          <button onClick={() => setDelMsg(m)} title="Удалить"
+                            className="w-7 h-7 rounded-lg border border-border bg-card flex items-center justify-center text-muted-foreground hover:text-red-600">
+                            <Icon name="Trash2" size={12} />
+                          </button>
+                        </div>
+                      )}
+                      {!mine && (
+                        <button onClick={() => setDelMsg(m)} title="Удалить у себя"
+                          className="order-2 w-7 h-7 rounded-lg border border-border bg-card flex items-center justify-center text-muted-foreground hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Icon name="Trash2" size={12} />
+                        </button>
+                      )}
+
                       <div className={`max-w-[80%] sm:max-w-md rounded-2xl px-3.5 py-2
                         ${mine ? "red-accent text-white rounded-br-sm" : "bg-card border border-border text-foreground rounded-bl-sm"}`}>
                         {!mine && (
                           <p className="text-[11px] font-montserrat font-bold opacity-70 mb-0.5">{m.from_name}</p>
                         )}
-                        {m.text && <p className="text-sm font-ibm whitespace-pre-wrap break-words">{m.text}</p>}
-                        <Attachment m={m} />
-                        <p className={`text-[10px] mt-1 ${mine ? "text-white/70" : "text-muted-foreground"}`}>
-                          {timeOf(m.created_at)}
-                        </p>
+
+                        {editing ? (
+                          <div className="space-y-2 min-w-[200px]">
+                            <textarea rows={2} value={editText} onChange={e => setEditText(e.target.value)} autoFocus
+                              className="w-full px-2 py-1.5 rounded-lg text-sm font-ibm text-foreground bg-white/95 outline-none resize-none" />
+                            <div className="flex gap-1.5">
+                              <button onClick={() => setEditId(null)}
+                                className="flex-1 py-1 rounded-lg bg-white/20 text-xs font-montserrat font-medium">Отмена</button>
+                              <button onClick={saveEdit}
+                                className="flex-1 py-1 rounded-lg bg-white text-red-700 text-xs font-montserrat font-bold">Сохранить</button>
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            {m.text && <p className="text-sm font-ibm whitespace-pre-wrap break-words">{m.text}</p>}
+                            <Attachment m={m} />
+                            <p className={`text-[10px] mt-1 ${mine ? "text-white/70" : "text-muted-foreground"}`}>
+                              {timeOf(m.created_at)}{m.edited_at ? " · изменено" : ""}
+                            </p>
+                          </>
+                        )}
                       </div>
                     </div>
                   );
@@ -376,6 +451,45 @@ export default function ChatPage({ user }: { user: User }) {
           )}
         </div>
       </div>
+
+      {delMsg && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-black/40" onClick={() => setDelMsg(null)} />
+          <div className="relative bg-card border border-border rounded-xl shadow-xl w-full max-w-sm p-5 animate-scale-in">
+            <h2 className="font-montserrat font-bold text-base text-foreground mb-1">Удалить сообщение</h2>
+            <p className="text-sm text-muted-foreground font-ibm mb-4 line-clamp-2">
+              {delMsg.text || delMsg.file_name || "Вложение"}
+            </p>
+
+            <div className="space-y-2">
+              <button onClick={() => removeMsg("me")}
+                className="w-full flex items-center gap-3 px-4 py-3 rounded-lg border border-border hover:bg-muted transition-colors text-left">
+                <Icon name="EyeOff" size={18} className="text-primary flex-shrink-0" />
+                <div>
+                  <p className="text-sm font-montserrat font-bold text-foreground">Удалить только у меня</p>
+                  <p className="text-xs text-muted-foreground font-ibm">Собеседник продолжит видеть</p>
+                </div>
+              </button>
+
+              {delMsg.from_user_id === Number(user.id) && (
+                <button onClick={() => removeMsg("all")}
+                  className="w-full flex items-center gap-3 px-4 py-3 rounded-lg border border-red-200 hover:bg-red-50 transition-colors text-left">
+                  <Icon name="Trash2" size={18} className="text-red-600 flex-shrink-0" />
+                  <div>
+                    <p className="text-sm font-montserrat font-bold text-red-600">Удалить у всех</p>
+                    <p className="text-xs text-muted-foreground font-ibm">Пропадёт и у получателя</p>
+                  </div>
+                </button>
+              )}
+
+              <button onClick={() => setDelMsg(null)}
+                className="w-full py-2 rounded-lg text-sm font-montserrat font-medium text-muted-foreground hover:text-foreground transition-colors">
+                Отмена
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

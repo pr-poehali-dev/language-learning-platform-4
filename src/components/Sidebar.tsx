@@ -36,7 +36,7 @@ interface SidebarProps {
 export default function Sidebar({ activePage, onNavigate, isOpen, onClose, user, onOpenSettings }: SidebarProps) {
   const navItems = user.role === "teacher" ? teacherNav : studentNav;
   const isTeacher = user.role === "teacher";
-  const { unread, soundOn, setSoundOn } = useChatAlerts();
+  const { unread, soundOn, setSoundOn, inLesson } = useChatAlerts();
 
   return (
     <>
@@ -126,12 +126,12 @@ export default function Sidebar({ activePage, onNavigate, isOpen, onClose, user,
         {/* Bottom */}
         <div className="px-3 pb-4 border-t border-sidebar-border pt-3 space-y-1">
           <button onClick={() => setSoundOn(!soundOn)}
-            title={soundOn ? "Выключить звук уведомлений" : "Включить звук уведомлений"}
+            title={inLesson ? "Во время урока звук приглушён" : soundOn ? "Выключить звук уведомлений" : "Включить звук уведомлений"}
             className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-sidebar-foreground/50 hover:text-sidebar-foreground hover:bg-sidebar-accent/60 transition-all duration-150">
-            <Icon name={soundOn ? "Volume2" : "VolumeX"} size={18} />
+            <Icon name={soundOn && !inLesson ? "Volume2" : "VolumeX"} size={18} />
             <span className="font-ibm">Звук сообщений</span>
-            <span className={`ml-auto text-xs font-montserrat font-bold ${soundOn ? "text-accent" : "text-sidebar-foreground/40"}`}>
-              {soundOn ? "вкл" : "выкл"}
+            <span className={`ml-auto text-xs font-montserrat font-bold ${soundOn && !inLesson ? "text-accent" : "text-sidebar-foreground/40"}`}>
+              {inLesson ? "урок" : soundOn ? "вкл" : "выкл"}
             </span>
           </button>
 

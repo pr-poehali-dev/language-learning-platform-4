@@ -105,6 +105,10 @@ def handler(event: dict, context) -> dict:
                 return get_messages(event, conn, user_id)
             if method == "POST":
                 return send_message(event, conn, user_id, user_name)
+            if method == "PUT":
+                return edit_message(event, conn, user_id)
+            if method == "DELETE":
+                return delete_message(event, conn, user_id)
 
         # --- Notifications ---
         if path == "notifications_read" and method == "POST":
@@ -414,8 +418,11 @@ MSG_SELECT = """SELECT m.id, m.from_user_id, m.to_user_id, m.text, m.is_read, m.
                        u.name as from_name, u.avatar as from_avatar,
                        COALESCE(m.file_url,'') as file_url, COALESCE(m.file_name,'') as file_name,
                        COALESCE(m.file_type,'') as file_type, COALESCE(m.audio_sec,0) as audio_sec,
-                       m.group_id
+                       m.group_id, m.edited_at, COALESCE(m.removed_for_all,FALSE) as removed_for_all
                 FROM messages m JOIN users u ON u.id=m.from_user_id"""
+
+def _visible(user_id):
+    return f" AND COALESCE(m.removed_for_all,FALSE)=FALSE AND NOT ({user_id} = ANY(COALESCE(m.hidden_for,'{{}}')))"
 
 def get_messages(event, conn, user_id):
     params = event.get("queryStringParameters") or {}
@@ -423,14 +430,15 @@ def get_messages(event, conn, user_id):
     cur = conn.cursor()
     if other_id:
         cur.execute(
-            MSG_SELECT + """ WHERE (m.from_user_id=%s AND m.to_user_id=%s)
-                                OR (m.from_user_id=%s AND m.to_user_id=%s)
-                             ORDER BY m.created_at""",
+            MSG_SELECT + """ WHERE ((m.from_user_id=%s AND m.to_user_id=%s)
+                                OR (m.from_user_id=%s AND m.to_user_id=%s))"""
+            + _visible(user_id) + " ORDER BY m.created_at",
             (user_id, int(other_id), int(other_id), user_id)
         )
     else:
         cur.execute(
-            MSG_SELECT + " WHERE m.from_user_id=%s OR m.to_user_id=%s ORDER BY m.created_at",
+            MSG_SELECT + " WHERE (m.from_user_id=%s OR m.to_user_id=%s)"
+            + _visible(user_id) + " ORDER BY m.created_at",
             (user_id, user_id)
         )
     rows = cur.fetchall()
@@ -446,6 +454,58 @@ def get_messages(event, conn, user_id):
 
 ONLINE_SEC = 120
 UNREAD_ALERT_MIN = 15
+EDIT_WINDOW_MIN = 60
+
+def edit_message(event, conn, user_id):
+    body = json.loads(event.get("body") or "{}")
+    msg_id = body.get("id")
+    text = (body.get("text") or "").strip()
+    if not msg_id or not text:
+        conn.close()
+        return resp(400, {"error": "Укажите сообщение и новый текст"})
+    cur = conn.cursor()
+    cur.execute(
+        f"""SELECT from_user_id, created_at < NOW() - INTERVAL '{EDIT_WINDOW_MIN} minutes'
+            FROM messages WHERE id=%s""", (msg_id,)
+    )
+    row = cur.fetchone()
+    if not row or row[0] != user_id:
+        cur.close(); conn.close()
+        return resp(403, {"error": "Можно менять только свои сообщения"})
+    if row[1]:
+        cur.close(); conn.close()
+        return resp(400, {"error": f"Изменить можно в течение {EDIT_WINDOW_MIN} минут"})
+    cur.execute("UPDATE messages SET text=%s, edited_at=NOW() WHERE id=%s", (text, msg_id))
+    conn.commit(); cur.close(); conn.close()
+    return resp(200, {"ok": True})
+
+def delete_message(event, conn, user_id):
+    params = event.get("queryStringParameters") or {}
+    body = json.loads(event.get("body") or "{}")
+    msg_id = body.get("id") or params.get("id")
+    scope = body.get("scope") or params.get("scope") or "me"
+    if not msg_id:
+        conn.close()
+        return resp(400, {"error": "Укажите сообщение"})
+    cur = conn.cursor()
+    cur.execute("SELECT from_user_id, to_user_id FROM messages WHERE id=%s", (msg_id,))
+    row = cur.fetchone()
+    if not row or user_id not in (row[0], row[1]):
+        cur.close(); conn.close()
+        return resp(403, {"error": "Нет доступа к этому сообщению"})
+
+    if scope == "all":
+        if row[0] != user_id:
+            cur.close(); conn.close()
+            return resp(403, {"error": "У всех можно удалить только своё сообщение"})
+        cur.execute("UPDATE messages SET removed_for_all=TRUE, is_read=TRUE WHERE id=%s", (msg_id,))
+    else:
+        cur.execute(
+            "UPDATE messages SET hidden_for = COALESCE(hidden_for,'{}') || %s::int WHERE id=%s",
+            (user_id, msg_id)
+        )
+    conn.commit(); cur.close(); conn.close()
+    return resp(200, {"ok": True})
 
 def chat_ping(conn, user_id):
     """Отметить пользователя в сети, вернуть непрочитанные и разослать письма о забытых сообщениях."""
@@ -456,8 +516,10 @@ def chat_ping(conn, user_id):
         """SELECT m.id, m.from_user_id, u.name, COALESCE(NULLIF(m.text,''), m.file_name, 'Вложение'), m.created_at
            FROM messages m JOIN users u ON u.id=m.from_user_id
            WHERE m.to_user_id=%s AND m.is_read=FALSE
+             AND COALESCE(m.removed_for_all,FALSE)=FALSE
+             AND NOT (%s = ANY(COALESCE(m.hidden_for,'{}')))
            ORDER BY m.created_at DESC LIMIT 30""",
-        (user_id,)
+        (user_id, user_id)
     )
     rows = cur.fetchall()
     unread = [{"id": r[0], "from_user_id": r[1], "from_name": r[2], "preview": r[3], "created_at": r[4]} for r in rows]
@@ -471,7 +533,7 @@ def _send_unread_digests(cur):
     cur.execute(
         f"""SELECT u.id, u.name, u.email, COUNT(m.id)
             FROM messages m JOIN users u ON u.id=m.to_user_id
-            WHERE m.is_read=FALSE AND COALESCE(m.email_notified,FALSE)=FALSE
+            WHERE m.is_read=FALSE AND COALESCE(m.email_notified,FALSE)=FALSE AND COALESCE(m.removed_for_all,FALSE)=FALSE
               AND m.created_at < NOW() - INTERVAL '{UNREAD_ALERT_MIN} minutes'
               AND COALESCE(u.notify_email,TRUE) AND COALESCE(u.notify_chat,TRUE)
               AND (u.last_seen IS NULL OR u.last_seen < NOW() - INTERVAL '{ONLINE_SEC} seconds')
@@ -490,7 +552,7 @@ def _send_unread_digests(cur):
         if send_email(uemail, f"Непрочитанных сообщений: {cnt}", html):
             sent += 1
         cur.execute(
-            "UPDATE messages SET email_notified=TRUE WHERE to_user_id=%s AND is_read=FALSE AND email_notified=FALSE",
+            "UPDATE messages SET email_notified=TRUE WHERE to_user_id=%s AND is_read=FALSE AND COALESCE(email_notified,FALSE)=FALSE",
             (uid,)
         )
     return sent
@@ -499,10 +561,14 @@ def get_chat_contacts(conn, user_id, role):
     """Список собеседников с последним сообщением и счётчиком непрочитанного."""
     cur = conn.cursor()
     if role == "teacher":
-        cur.execute("SELECT id, name, avatar, COALESCE(level,'') FROM users WHERE role='student' ORDER BY name")
+        cur.execute(f"""SELECT id, name, avatar, COALESCE(level,''),
+                        (last_seen IS NOT NULL AND last_seen > NOW() - INTERVAL '{ONLINE_SEC} seconds')
+                        FROM users WHERE role='student' ORDER BY name""")
     else:
-        cur.execute("SELECT id, name, avatar, COALESCE(level,'') FROM users WHERE role='teacher' ORDER BY name")
-    people = [{"id": r[0], "name": r[1], "avatar": r[2], "level": r[3],
+        cur.execute(f"""SELECT id, name, avatar, COALESCE(level,''),
+                        (last_seen IS NOT NULL AND last_seen > NOW() - INTERVAL '{ONLINE_SEC} seconds')
+                        FROM users WHERE role='teacher' ORDER BY name""")
+    people = [{"id": r[0], "name": r[1], "avatar": r[2], "level": r[3], "online": bool(r[4]),
                "last_text": "", "last_at": None, "unread": 0} for r in cur.fetchall()]
 
     if people:
@@ -525,6 +591,7 @@ def get_chat_contacts(conn, user_id, role):
         cur.execute(
             f"""SELECT from_user_id, COUNT(*) FROM messages
                 WHERE to_user_id={user_id} AND is_read=FALSE AND from_user_id IN ({ids})
+                  AND COALESCE(removed_for_all,FALSE)=FALSE
                 GROUP BY from_user_id"""
         )
         for pid, cnt in cur.fetchall():

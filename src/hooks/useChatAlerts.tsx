@@ -8,13 +8,15 @@ interface ChatAlertsValue {
   toasts: Toast[];
   soundOn: boolean;
   setSoundOn: (v: boolean) => void;
+  inLesson: boolean;
+  setInLesson: (v: boolean) => void;
   dismiss: (id: number) => void;
   refresh: () => void;
 }
 
 const Ctx = createContext<ChatAlertsValue>({
-  unread: 0, toasts: [], soundOn: true,
-  setSoundOn: () => {}, dismiss: () => {}, refresh: () => {},
+  unread: 0, toasts: [], soundOn: true, inLesson: false,
+  setSoundOn: () => {}, setInLesson: () => {}, dismiss: () => {}, refresh: () => {},
 });
 
 export const useChatAlerts = () => useContext(Ctx);
@@ -45,6 +47,7 @@ export function ChatAlertsProvider({ children, enabled }: { children: ReactNode;
   const [unread, setUnread] = useState(0);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [soundOn, setSoundOnState] = useState(() => localStorage.getItem("hispania_chat_sound") !== "off");
+  const [inLesson, setInLesson] = useState(false);
   const seenRef = useRef<Set<number>>(new Set());
   const firstRef = useRef(true);
 
@@ -69,12 +72,12 @@ export function ChatAlertsProvider({ children, enabled }: { children: ReactNode;
       if (firstRef.current) { firstRef.current = false; return; }
       if (!fresh.length) return;
 
-      if (soundOn) playBeep();
+      if (soundOn && !inLesson) playBeep();
       const newToasts = fresh.slice(0, 3).map(m => ({ id: m.id, name: m.from_name, preview: m.preview }));
       setToasts(prev => [...newToasts, ...prev].slice(0, 4));
       newToasts.forEach(t => setTimeout(() => dismiss(t.id), 7000));
     } catch { /* сеть недоступна */ }
-  }, [enabled, soundOn, dismiss]);
+  }, [enabled, soundOn, inLesson, dismiss]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -84,7 +87,7 @@ export function ChatAlertsProvider({ children, enabled }: { children: ReactNode;
   }, [enabled, tick]);
 
   return (
-    <Ctx.Provider value={{ unread, toasts, soundOn, setSoundOn, dismiss, refresh: tick }}>
+    <Ctx.Provider value={{ unread, toasts, soundOn, setSoundOn, inLesson, setInLesson, dismiss, refresh: tick }}>
       {children}
     </Ctx.Provider>
   );
