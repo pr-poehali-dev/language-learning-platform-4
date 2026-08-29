@@ -424,7 +424,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
 
           <p className="text-center text-xs text-muted-foreground font-ibm mt-5">
             Вопросы? Напишите нам на{" "}
-            <a href="https://hispania35.online" target="_blank" className="text-primary hover:underline">hispania35.online</a>
+            <a href="mailto:hispania35@yandex.ru" className="text-primary hover:underline">hispania35@yandex.ru</a>
           </p>
         </div>
       </div>
