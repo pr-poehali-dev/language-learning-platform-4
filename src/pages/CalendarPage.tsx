@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import Icon from "@/components/ui/icon";
-import { apiGetCalendar, apiCreateLesson, apiMoveLesson, apiDeleteLesson, apiUpdateLesson, apiGetStudents, apiGetGroups, apiStartLesson, type Lesson, type StudentInfo, type StudentGroup } from "@/lib/api";
+import { apiGetCalendar, apiCreateLesson, apiMoveLesson, apiDeleteLesson, apiUpdateLesson, apiGetStudents, apiGetGroups, apiStartLesson, apiCancelLesson, type Lesson, type StudentInfo, type StudentGroup } from "@/lib/api";
 import { type User } from "@/pages/LoginPage";
 import { buildRoomName } from "@/pages/LessonRoomPage";
 
@@ -59,6 +59,10 @@ export default function CalendarPage({ user, onJoinLesson }: { user: User; onJoi
   const [actionLesson, setActionLesson] = useState<Lesson | null>(null);
   const [filterStudent, setFilterStudent] = useState<number | null>(null);
   const [groups, setGroups] = useState<StudentGroup[]>([]);
+  const [cancelLesson, setCancelLesson] = useState<Lesson | null>(null);
+  const [cancelReason, setCancelReason] = useState("");
+  const [cancelSaving, setCancelSaving] = useState(false);
+  const [cancelDone, setCancelDone] = useState("");
 
   useEffect(() => {
     apiGetCalendar()
@@ -607,6 +611,14 @@ export default function CalendarPage({ user, onJoinLesson }: { user: User; onJoi
                     Начать урок
                   </button>
 
+                  {!isTeacher && (
+                    <button onClick={() => { setCancelLesson(selectedLesson); setCancelReason(""); }}
+                      className="mt-2 w-full flex items-center justify-center gap-1.5 py-2 rounded-lg border border-border text-muted-foreground text-sm font-montserrat font-medium hover:bg-muted hover:text-foreground transition-colors">
+                      <Icon name="CalendarX" size={14} />
+                      Не смогу прийти
+                    </button>
+                  )}
+
                   {isTeacher && (
                     <div className="mt-2 flex gap-2">
                       <button onClick={() => openEdit(selectedLesson)}
@@ -687,6 +699,50 @@ export default function CalendarPage({ user, onJoinLesson }: { user: User; onJoi
           </div>
         </div>
       </div>
+
+      {cancelLesson && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-black/40" onClick={() => !cancelSaving && setCancelLesson(null)} />
+          <div className="relative bg-card border border-border rounded-xl shadow-xl w-full max-w-sm p-5 animate-scale-in">
+            <h2 className="font-montserrat font-bold text-base text-foreground mb-1">Не смогу прийти</h2>
+            <p className="text-sm text-muted-foreground font-ibm mb-4">
+              «{cancelLesson.topic}» · {cancelLesson.lesson_time.slice(0, 5)}
+            </p>
+
+            <label className="text-xs font-montserrat font-bold text-muted-foreground">Причина (необязательно)</label>
+            <textarea rows={3} value={cancelReason} onChange={e => setCancelReason(e.target.value)}
+              placeholder="Например: заболел, буду в отъезде"
+              className="mt-1 w-full px-3 py-2 rounded-lg border border-border bg-muted/30 text-sm font-ibm outline-none focus:border-primary/40 resize-none" />
+
+            {cancelDone && (
+              <p className="mt-2 text-xs text-red-600 font-ibm">{cancelDone}</p>
+            )}
+
+            <div className="flex gap-2 mt-4">
+              <button onClick={() => setCancelLesson(null)} disabled={cancelSaving}
+                className="flex-1 py-2 rounded-lg border border-border text-sm font-montserrat font-medium text-foreground hover:bg-muted transition-colors disabled:opacity-60">
+                Отмена
+              </button>
+              <button disabled={cancelSaving}
+                onClick={async () => {
+                  setCancelSaving(true);
+                  try {
+                    const res = await apiCancelLesson(cancelLesson.id, cancelReason.trim());
+                    if (res.ok) { setCancelLesson(null); setCancelDone(""); }
+                    else setCancelDone(res.error || "Не удалось отправить");
+                  } catch {
+                    setCancelDone("Нет связи с сервером");
+                  } finally {
+                    setCancelSaving(false);
+                  }
+                }}
+                className="flex-1 py-2 rounded-lg bg-red-600 text-white text-sm font-montserrat font-bold hover:bg-red-700 transition-colors disabled:opacity-60">
+                {cancelSaving ? "Отправляю..." : "Сообщить"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {actionLesson && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">

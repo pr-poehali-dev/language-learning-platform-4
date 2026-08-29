@@ -92,6 +92,42 @@ export async function apiGetStudents() {
   return r.data as { students?: StudentInfo[]; error?: string };
 }
 
+export interface Profile {
+  id: number;
+  name: string;
+  email: string;
+  role: string;
+  level?: string;
+  avatar?: string;
+  phone?: string;
+  social_name?: string;
+  social_url?: string;
+  telegram?: string;
+  whatsapp?: string;
+  about?: string;
+  notify_email?: boolean;
+  notify_new_lesson?: boolean;
+  notify_cancel?: boolean;
+}
+
+export async function apiGetProfile() {
+  const r = await request(API_URL + "?p=profile");
+  return r.data as { profile?: Profile; error?: string };
+}
+
+export async function apiUpdateProfile(data: Partial<Profile>) {
+  const r = await request(API_URL + "?p=profile", { method: "PUT", body: JSON.stringify(data) });
+  return r.data as { profile?: Profile; error?: string };
+}
+
+export async function apiCancelLesson(lessonId: number, reason: string) {
+  const r = await request(API_URL + "?p=lesson_cancel", {
+    method: "POST",
+    body: JSON.stringify({ lesson_id: lessonId, reason }),
+  });
+  return r.data as { ok?: boolean; error?: string };
+}
+
 export async function apiStartLesson(lessonId: number) {
   const r = await request(API_URL + "?p=lesson_start", {
     method: "POST",

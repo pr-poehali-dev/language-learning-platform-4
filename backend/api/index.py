@@ -106,6 +106,17 @@ def handler(event: dict, context) -> dict:
         if path == "notifications" and method == "GET":
             return get_notifications(conn, user_id)
 
+        # --- Profile ---
+        if path == "profile":
+            if method == "GET":
+                return get_profile(conn, user_id)
+            if method == "PUT":
+                return update_profile(event, conn, user_id)
+
+        # --- Student cancels lesson ---
+        if path == "lesson_cancel" and method == "POST":
+            return cancel_lesson_by_student(event, conn, user_id, user_name)
+
         # --- Start lesson (video) ---
         if path == "lesson_start" and method == "POST":
             return start_lesson(event, conn, user_id, role)
@@ -257,10 +268,25 @@ def create_lesson(event, conn, user_id, role):
         cur.execute(f"SELECT id FROM users WHERE role='student' AND id IN ({id_list})")
     else:
         cur.execute("SELECT id FROM users WHERE role='student'")
+    added = 0
     for (sid,) in cur.fetchall():
         cur.execute("INSERT INTO lesson_students (lesson_id, student_id) VALUES (%s,%s)", (lesson_id, sid))
         cur.execute("INSERT INTO notifications (user_id, text, type) VALUES (%s,%s,'calendar')",
                     (sid, f"Новое занятие {lesson_date} {lesson_time}: {topic}"))
+        added += 1
+
+    cur.execute("SELECT COALESCE(notify_new_lesson,TRUE) FROM users WHERE id=%s", (user_id,))
+    r = cur.fetchone()
+    if r and r[0]:
+        from mailer import _wrap
+        html = _wrap("Занятие добавлено в расписание", [
+            f"Занятие <b>«{topic}»</b> поставлено в расписание.",
+            f"Дата и время: <b>{lesson_date}, {str(lesson_time)[:5]}</b>",
+            f"Учеников записано: <b>{added}</b>",
+        ])
+        notify_teacher(cur, user_id, f"Новое занятие «{topic}»",
+                       f"Занятие «{topic}» назначено на {lesson_date} {str(lesson_time)[:5]}", html)
+
     conn.commit(); cur.close(); conn.close()
     return resp(200, {"ok": True, "id": lesson_id})
 
@@ -359,6 +385,19 @@ def delete_lesson(event, conn, user_id, role):
     for sid in student_ids:
         cur.execute("INSERT INTO notifications (user_id, text, type) VALUES (%s,%s,'calendar')",
                     (sid, f"Занятие отменено {l_date} {str(l_time)[:5]}: {topic}"))
+
+    cur.execute("SELECT COALESCE(notify_cancel,TRUE) FROM users WHERE id=%s", (user_id,))
+    r = cur.fetchone()
+    if r and r[0]:
+        from mailer import _wrap
+        html = _wrap("Занятие отменено", [
+            f"Занятие <b>«{topic}»</b> удалено из расписания.",
+            f"Было запланировано на <b>{ru_date(l_date)}, {str(l_time)[:5]}</b>",
+            f"Уведомлено учеников: <b>{len(student_ids)}</b>",
+        ])
+        notify_teacher(cur, user_id, f"Занятие «{topic}» отменено",
+                       f"Занятие «{topic}» {ru_date(l_date)} в {str(l_time)[:5]} отменено", html)
+
     conn.commit(); cur.close(); conn.close()
     return resp(200, {"ok": True})
 
@@ -432,6 +471,134 @@ def mark_notifications_read(conn, user_id):
 
 
 # ── Students / Leaderboard ─────────────────────────────────────────────────────
+
+PROFILE_COLS = ["id", "name", "email", "role", "level", "avatar", "phone",
+                "social_name", "social_url", "telegram", "whatsapp", "about",
+                "notify_email", "notify_new_lesson", "notify_cancel"]
+
+def get_profile(conn, user_id):
+    cur = conn.cursor()
+    cur.execute(
+        """SELECT id, name, email, role, COALESCE(level,''), COALESCE(avatar,''),
+                  COALESCE(phone,''), COALESCE(social_name,''), COALESCE(social_url,''),
+                  COALESCE(telegram,''), COALESCE(whatsapp,''), COALESCE(about,''),
+                  COALESCE(notify_email,TRUE), COALESCE(notify_new_lesson,TRUE),
+                  COALESCE(notify_cancel,TRUE)
+           FROM users WHERE id=%s""", (user_id,)
+    )
+    row = cur.fetchone()
+    cur.close(); conn.close()
+    if not row:
+        return resp(404, {"error": "Профиль не найден"})
+    return resp(200, {"profile": dict(zip(PROFILE_COLS, row))})
+
+def update_profile(event, conn, user_id):
+    body = json.loads(event.get("body") or "{}")
+    email = (body.get("email") or "").strip()
+    name = (body.get("name") or "").strip()
+    if not name:
+        conn.close()
+        return resp(400, {"error": "Укажите имя"})
+    if not email or "@" not in email or "." not in email:
+        conn.close()
+        return resp(400, {"error": "Укажите корректную электронную почту"})
+
+    cur = conn.cursor()
+    cur.execute("SELECT id FROM users WHERE email=%s AND id<>%s", (email, user_id))
+    if cur.fetchone():
+        cur.close(); conn.close()
+        return resp(400, {"error": "Эта почта уже занята"})
+
+    def flag(key):
+        v = body.get(key)
+        return True if v is None else bool(v)
+
+    cur.execute(
+        """UPDATE users SET name=%s, email=%s, phone=%s, social_name=%s, social_url=%s,
+               telegram=%s, whatsapp=%s, about=%s,
+               notify_email=%s, notify_new_lesson=%s, notify_cancel=%s
+           WHERE id=%s""",
+        (name, email, (body.get("phone") or "").strip(),
+         (body.get("social_name") or "").strip(), (body.get("social_url") or "").strip(),
+         (body.get("telegram") or "").strip(), (body.get("whatsapp") or "").strip(),
+         (body.get("about") or "").strip(),
+         flag("notify_email"), flag("notify_new_lesson"), flag("notify_cancel"),
+         user_id)
+    )
+    conn.commit(); cur.close()
+    return get_profile(conn, user_id)
+
+def notify_teacher(conn_cur, teacher_id, subject, text, html):
+    """Уведомить преподавателя в колокольчик и на почту (если включено)."""
+    conn_cur.execute(
+        """SELECT email, COALESCE(notify_email,TRUE) FROM users WHERE id=%s""", (teacher_id,)
+    )
+    row = conn_cur.fetchone()
+    conn_cur.execute(
+        "INSERT INTO notifications (user_id, text, type) VALUES (%s,%s,'calendar')",
+        (teacher_id, text)
+    )
+    if row and row[1]:
+        send_email(row[0], subject, html)
+
+def cancel_lesson_by_student(event, conn, user_id, user_name):
+    body = json.loads(event.get("body") or "{}")
+    lesson_id = body.get("lesson_id")
+    reason = (body.get("reason") or "").strip()
+    if not lesson_id:
+        conn.close()
+        return resp(400, {"error": "Укажите занятие"})
+
+    cur = conn.cursor()
+    cur.execute(
+        """SELECT l.teacher_id, COALESCE(l.topic, l.title), l.lesson_date, l.lesson_time
+           FROM lessons l
+           JOIN lesson_students ls ON ls.lesson_id=l.id
+           WHERE l.id=%s AND ls.student_id=%s""",
+        (lesson_id, user_id)
+    )
+    row = cur.fetchone()
+    if not row:
+        cur.close(); conn.close()
+        return resp(404, {"error": "Занятие не найдено"})
+    teacher_id, topic, l_date, l_time = row
+    time_str = str(l_time)[:5]
+    date_str = ru_date(l_date)
+
+    cur.execute(
+        """INSERT INTO lesson_cancellations (lesson_id, student_id, reason)
+           VALUES (%s,%s,%s) ON CONFLICT (lesson_id, student_id) DO UPDATE SET reason=EXCLUDED.reason""",
+        (lesson_id, user_id, reason)
+    )
+    cur.execute(
+        "INSERT INTO messages (from_user_id, to_user_id, text) VALUES (%s,%s,%s)",
+        (user_id, teacher_id,
+         f"Не смогу быть на занятии «{topic}» {date_str} в {time_str}." + (f" Причина: {reason}" if reason else ""))
+    )
+
+    cur.execute("SELECT COALESCE(notify_cancel,TRUE) FROM users WHERE id=%s", (teacher_id,))
+    r = cur.fetchone()
+    if r and r[0]:
+        html = _cancel_html(user_name, topic, date_str, time_str, reason)
+        notify_teacher(cur, teacher_id,
+                       f"{user_name} отменил занятие «{topic}»",
+                       f"{user_name} не придёт на занятие «{topic}» {date_str} в {time_str}"
+                       + (f". Причина: {reason}" if reason else ""),
+                       html)
+
+    conn.commit(); cur.close(); conn.close()
+    return resp(200, {"ok": True})
+
+def _cancel_html(student_name, topic, date_str, time_str, reason):
+    from mailer import _wrap
+    lines = [
+        f"Ученик <b>{student_name}</b> сообщил, что не сможет быть на занятии.",
+        f"Занятие: <b>«{topic}»</b>",
+        f"Дата и время: <b>{date_str}, {time_str}</b>",
+    ]
+    if reason:
+        lines.append(f"Причина: {reason}")
+    return _wrap("Ученик отменил занятие", lines)
 
 def start_lesson(event, conn, user_id, role):
     if role != "teacher":

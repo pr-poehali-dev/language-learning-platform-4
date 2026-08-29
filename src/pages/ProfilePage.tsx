@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { type User } from "@/pages/LoginPage";
 import Icon from "@/components/ui/icon";
 import { apiResetList, apiResetDo, type PasswordReset } from "@/lib/api";
+import ProfileEditor from "@/components/ProfileEditor";
 
 const profileTabs = ["Профиль", "Статистика", "Рейтинг", "Чат"];
 
@@ -79,7 +80,9 @@ export default function ProfilePage({ user }: { user: User }) {
             </div>
             <div className="flex-1">
               <h2 className="font-montserrat font-black text-xl text-foreground">{user.name}</h2>
-              <p className="text-muted-foreground text-sm font-ibm">Студент · Испанский язык</p>
+              <p className="text-muted-foreground text-sm font-ibm">
+                {user.role === "teacher" ? "Преподаватель" : "Студент"} · Испанский язык
+              </p>
             </div>
             <div className="flex items-center gap-3">
               <div className="text-center">
@@ -121,55 +124,33 @@ export default function ProfilePage({ user }: { user: User }) {
 
       {/* Tab content */}
       {activeTab === "Профиль" && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5 animate-fade-in">
-          {/* Info */}
-          <div className="bg-card rounded-xl border border-border p-5 space-y-4">
-            <h3 className="font-montserrat font-bold text-sm text-foreground">Личные данные</h3>
-            {[
-              { label: "Имя", value: "Анна Михайлова", icon: "User" },
-              { label: "Email", value: "anna.m@email.ru", icon: "Mail" },
-              { label: "Телефон", value: "+7 (900) 123-45-67", icon: "Phone" },
-              { label: "Группа", value: "Среда + Пятница 18:00", icon: "Users" },
-              { label: "Преподаватель", value: "Елена Смирнова", icon: "GraduationCap" },
-              { label: "Начало обучения", value: "3 февраля 2026", icon: "CalendarDays" },
-            ].map((f, i) => (
-              <div key={i} className="flex items-center gap-3">
-                <Icon name={f.icon} size={16} className="text-primary flex-shrink-0" />
-                <div className="flex-1 flex items-center justify-between">
-                  <span className="text-xs text-muted-foreground font-ibm w-32">{f.label}</span>
-                  <span className="text-sm text-foreground font-ibm font-medium">{f.value}</span>
-                </div>
-              </div>
-            ))}
-            <button className="w-full mt-2 py-2 border border-border rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-muted transition-colors font-montserrat font-medium">
-              Редактировать профиль
-            </button>
-          </div>
+        <div className="space-y-5">
+          <ProfileEditor isTeacher={user.role === "teacher"} />
 
-          {/* Achievements */}
-          <div className="bg-card rounded-xl border border-border p-5">
-            <h3 className="font-montserrat font-bold text-sm text-foreground mb-4">Достижения</h3>
-            <div className="grid grid-cols-3 gap-3">
-              {achievements.map((a, i) => (
-                <div key={i} className={`rounded-xl p-3 text-center border transition-all ${a.earned ? "border-accent/30 bg-accent/5" : "border-border bg-muted/30 opacity-50"}`}>
-                  <div className="text-2xl mb-1">{a.icon}</div>
-                  <p className="text-xs font-montserrat font-medium text-foreground leading-tight">{a.title}</p>
-                </div>
-              ))}
-            </div>
+          {user.role !== "teacher" && (
+            <div className="bg-card rounded-xl border border-border p-5 animate-fade-in">
+              <h3 className="font-montserrat font-bold text-sm text-foreground mb-4">Достижения</h3>
+              <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
+                {achievements.map((a, i) => (
+                  <div key={i} className={`rounded-xl p-3 text-center border transition-all ${a.earned ? "border-accent/30 bg-accent/5" : "border-border bg-muted/30 opacity-50"}`}>
+                    <div className="text-2xl mb-1">{a.icon}</div>
+                    <p className="text-xs font-montserrat font-medium text-foreground leading-tight">{a.title}</p>
+                  </div>
+                ))}
+              </div>
 
-            {/* Progress to next level */}
-            <div className="mt-5 p-4 bg-muted/40 rounded-lg">
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-xs font-montserrat font-bold text-foreground">До уровня B2</span>
-                <span className="text-xs text-muted-foreground font-ibm">87 / 150 баллов</span>
+              <div className="mt-5 p-4 bg-muted/40 rounded-lg">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-xs font-montserrat font-bold text-foreground">До уровня B2</span>
+                  <span className="text-xs text-muted-foreground font-ibm">87 / 150 баллов</span>
+                </div>
+                <div className="h-2.5 bg-muted rounded-full">
+                  <div className="progress-bar h-2.5" style={{ width: "58%" }} />
+                </div>
+                <p className="text-xs text-muted-foreground font-ibm mt-1.5">Осталось 63 балла</p>
               </div>
-              <div className="h-2.5 bg-muted rounded-full">
-                <div className="progress-bar h-2.5" style={{ width: "58%" }} />
-              </div>
-              <p className="text-xs text-muted-foreground font-ibm mt-1.5">Осталось 63 балла</p>
             </div>
-          </div>
+          )}
         </div>
       )}
 
