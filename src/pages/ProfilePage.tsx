@@ -4,7 +4,7 @@ import Icon from "@/components/ui/icon";
 import { apiResetList, apiResetDo, type PasswordReset } from "@/lib/api";
 import ProfileEditor from "@/components/ProfileEditor";
 
-const profileTabs = ["Профиль", "Статистика", "Рейтинг", "Чат"];
+const profileTabs = ["Профиль", "Статистика", "Рейтинг"];
 
 const activityData = [5, 8, 3, 12, 7, 10, 4, 9, 6, 11, 8, 5, 13, 7, 9, 6, 8, 11, 4, 7, 10, 8, 12, 6, 9, 14, 8, 5];
 
@@ -15,14 +15,6 @@ const leaderboard = [
   { name: "Ольга Петрова", score: 81, level: "A2", avatar: "ОП", streak: 12 },
   { name: "Иван Тихонов", score: 75, level: "A2", avatar: "ИТ", streak: 8 },
   { name: "Светлана Юрьева", score: 68, level: "A1", avatar: "СЮ", streak: 5 },
-];
-
-const chatMessages = [
-  { from: "teacher", author: "Елена Смирнова", text: "Привет, Анна! Как дела с заданием по Subjuntivo?", time: "10:30" },
-  { from: "me", text: "Добрый день! Почти закончила, осталось несколько упражнений.", time: "10:35" },
-  { from: "teacher", author: "Елена Смирнова", text: "Отлично! Не забудьте обратить внимание на исключения — yo/él форму глаголов ser, ir, ver.", time: "10:37" },
-  { from: "me", text: "Спасибо, записала! А можете скинуть таблицу с исключениями?", time: "10:40" },
-  { from: "teacher", author: "Елена Смирнова", text: "Конечно! Уже загрузила в раздел Материалы → Грамматика → Subjuntivo.", time: "10:42" },
 ];
 
 const achievements = [
@@ -37,7 +29,6 @@ const achievements = [
 export default function ProfilePage({ user }: { user: User }) {
   const tabs = user.role === "teacher" ? [...profileTabs, "Сброс паролей"] : profileTabs;
   const [activeTab, setActiveTab] = useState("Профиль");
-  const [message, setMessage] = useState("");
 
   const [resets, setResets] = useState<PasswordReset[]>([]);
   const [resetsLoading, setResetsLoading] = useState(false);
@@ -260,61 +251,6 @@ export default function ProfilePage({ user }: { user: User }) {
         </div>
       )}
 
-      {activeTab === "Чат" && (
-        <div className="bg-card rounded-xl border border-border overflow-hidden animate-fade-in flex flex-col" style={{ height: "500px" }}>
-          {/* Chat header */}
-          <div className="flex items-center gap-3 px-5 py-4 border-b border-border">
-            <div className="w-9 h-9 rounded-full red-accent flex items-center justify-center flex-shrink-0">
-              <span className="text-white font-bold text-xs">ЕС</span>
-            </div>
-            <div>
-              <p className="font-montserrat font-bold text-sm text-foreground">Елена Смирнова</p>
-              <div className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-green-500" />
-                <p className="text-xs text-muted-foreground font-ibm">Онлайн</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Messages */}
-          <div className="flex-1 overflow-y-auto p-5 space-y-4">
-            {chatMessages.map((msg, i) => (
-              <div key={i} className={`flex gap-3 ${msg.from === "me" ? "flex-row-reverse" : ""}`}>
-                {msg.from === "teacher" && (
-                  <div className="w-8 h-8 rounded-full red-accent flex items-center justify-center flex-shrink-0 self-end">
-                    <span className="text-white text-xs font-bold">ЕС</span>
-                  </div>
-                )}
-                <div className={`max-w-xs rounded-2xl px-4 py-2.5 ${
-                  msg.from === "me"
-                    ? "red-accent text-white rounded-br-sm"
-                    : "bg-muted text-foreground rounded-bl-sm"
-                }`}>
-                  <p className="text-sm font-ibm leading-relaxed">{msg.text}</p>
-                  <p className={`text-xs mt-1 ${msg.from === "me" ? "text-white/60" : "text-muted-foreground"}`}>{msg.time}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Input */}
-          <div className="px-4 py-3 border-t border-border flex gap-2">
-            <button className="p-2 rounded-lg hover:bg-muted transition-colors">
-              <Icon name="Paperclip" size={18} className="text-muted-foreground" />
-            </button>
-            <input
-              type="text"
-              placeholder="Написать сообщение..."
-              value={message}
-              onChange={e => setMessage(e.target.value)}
-              className="flex-1 bg-muted/50 rounded-xl px-4 py-2 text-sm text-foreground placeholder:text-muted-foreground outline-none border border-transparent focus:border-primary/30 font-ibm transition-colors"
-            />
-            <button className={`p-2.5 rounded-xl transition-all ${message ? "red-accent text-white" : "bg-muted text-muted-foreground"}`}>
-              <Icon name="Send" size={18} />
-            </button>
-          </div>
-        </div>
-      )}
 
       {activeTab === "Сброс паролей" && user.role === "teacher" && (
         <div className="animate-fade-in space-y-4">

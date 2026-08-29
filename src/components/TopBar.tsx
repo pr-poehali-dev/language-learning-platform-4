@@ -11,6 +11,7 @@ const pageTitles: Record<Page, string> = {
   materials: "Учебные материалы",
   homework: "Домашние задания",
   students: "Ученики и группы",
+  chat: "Чат",
   profile: "Мой профиль",
 };
 

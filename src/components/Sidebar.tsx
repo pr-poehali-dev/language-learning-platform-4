@@ -8,6 +8,7 @@ const studentNav = [
   { id: "lesson" as Page, label: "Начать урок", icon: "Video" },
   { id: "materials" as Page, label: "Материалы", icon: "BookOpen" },
   { id: "homework" as Page, label: "Домашние задания", icon: "ClipboardList", badge: 3 },
+  { id: "chat" as Page, label: "Чат", icon: "MessageSquare" },
   { id: "profile" as Page, label: "Профиль", icon: "UserCircle" },
 ];
 
@@ -17,6 +18,7 @@ const teacherNav = [
   { id: "lesson" as Page, label: "Начать урок", icon: "Video" },
   { id: "materials" as Page, label: "Материалы", icon: "BookOpen" },
   { id: "homework" as Page, label: "Проверка заданий", icon: "ClipboardCheck", badge: 2 },
+  { id: "chat" as Page, label: "Чат", icon: "MessageSquare" },
   { id: "students" as Page, label: "Ученики и группы", icon: "Users" },
   { id: "profile" as Page, label: "Профиль", icon: "UserCircle" },
 ];

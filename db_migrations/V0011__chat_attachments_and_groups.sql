@@ -1,0 +1,6 @@
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS file_url TEXT DEFAULT '';
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS file_name VARCHAR(255) DEFAULT '';
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS file_type VARCHAR(40) DEFAULT '';
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS group_id INTEGER;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS audio_sec INTEGER DEFAULT 0;
+CREATE INDEX IF NOT EXISTS idx_messages_pair ON messages (from_user_id, to_user_id, created_at);

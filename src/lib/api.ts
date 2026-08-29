@@ -221,12 +221,26 @@ export async function apiGetMessages(withUserId?: number) {
   return r.data as { messages?: ChatMessage[]; error?: string };
 }
 
-export async function apiSendMessage(toUserId: number, text: string) {
+export async function apiGetChatContacts() {
+  const r = await request(API_URL + "?p=chat_contacts");
+  return r.data as { contacts?: ChatContact[]; groups?: ChatGroup[]; error?: string };
+}
+
+export async function apiSendMessage(payload: {
+  to_user_id?: number;
+  group_id?: number;
+  text?: string;
+  file_data?: string;
+  file_name?: string;
+  file_type?: string;
+  mime?: string;
+  audio_sec?: number;
+}) {
   const r = await request(API_URL + "?p=chat", {
     method: "POST",
-    body: JSON.stringify({ to_user_id: toUserId, text }),
+    body: JSON.stringify(payload),
   });
-  return r.data as { ok?: boolean; id?: number; error?: string };
+  return r.data as { ok?: boolean; id?: number; sent?: number; error?: string };
 }
 
 export async function apiGetNotifications() {
@@ -372,6 +386,28 @@ export interface ChatMessage {
   created_at: string;
   from_name: string;
   from_avatar: string;
+  file_url?: string;
+  file_name?: string;
+  file_type?: string;
+  audio_sec?: number;
+  group_id?: number | null;
+}
+
+export interface ChatContact {
+  id: number;
+  name: string;
+  avatar: string;
+  level?: string;
+  last_text?: string;
+  last_at?: string | null;
+  unread?: number;
+}
+
+export interface ChatGroup {
+  id: number;
+  name: string;
+  color?: string;
+  students: { id: number; name: string; avatar: string }[];
 }
 
 export interface Notification {

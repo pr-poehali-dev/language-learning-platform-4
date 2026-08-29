@@ -94,6 +94,9 @@ def handler(event: dict, context) -> dict:
                 return delete_lesson(event, conn, user_id, role)
 
         # --- Chat ---
+        if path == "chat_contacts" and method == "GET":
+            return get_chat_contacts(conn, user_id, role)
+
         if path == "chat":
             if method == "GET":
                 return get_messages(event, conn, user_id)
@@ -404,49 +407,166 @@ def delete_lesson(event, conn, user_id, role):
 
 # ── Chat ───────────────────────────────────────────────────────────────────────
 
+MSG_SELECT = """SELECT m.id, m.from_user_id, m.to_user_id, m.text, m.is_read, m.created_at,
+                       u.name as from_name, u.avatar as from_avatar,
+                       COALESCE(m.file_url,'') as file_url, COALESCE(m.file_name,'') as file_name,
+                       COALESCE(m.file_type,'') as file_type, COALESCE(m.audio_sec,0) as audio_sec,
+                       m.group_id
+                FROM messages m JOIN users u ON u.id=m.from_user_id"""
+
 def get_messages(event, conn, user_id):
     params = event.get("queryStringParameters") or {}
     other_id = params.get("with")
     cur = conn.cursor()
     if other_id:
         cur.execute(
-            """SELECT m.id, m.from_user_id, m.to_user_id, m.text, m.is_read, m.created_at,
-                      u.name as from_name, u.avatar as from_avatar
-               FROM messages m JOIN users u ON u.id=m.from_user_id
-               WHERE (m.from_user_id=%s AND m.to_user_id=%s)
-                  OR (m.from_user_id=%s AND m.to_user_id=%s)
-               ORDER BY m.created_at""",
+            MSG_SELECT + """ WHERE (m.from_user_id=%s AND m.to_user_id=%s)
+                                OR (m.from_user_id=%s AND m.to_user_id=%s)
+                             ORDER BY m.created_at""",
             (user_id, int(other_id), int(other_id), user_id)
         )
     else:
         cur.execute(
-            """SELECT m.id, m.from_user_id, m.to_user_id, m.text, m.is_read, m.created_at,
-                      u.name as from_name, u.avatar as from_avatar
-               FROM messages m JOIN users u ON u.id=m.from_user_id
-               WHERE m.from_user_id=%s OR m.to_user_id=%s
-               ORDER BY m.created_at""",
+            MSG_SELECT + " WHERE m.from_user_id=%s OR m.to_user_id=%s ORDER BY m.created_at",
             (user_id, user_id)
         )
     rows = cur.fetchall()
     cols = [d[0] for d in cur.description]
+    messages = [dict(zip(cols, r)) for r in rows]
+
+    if other_id:
+        cur.execute("UPDATE messages SET is_read=TRUE WHERE to_user_id=%s AND from_user_id=%s AND is_read=FALSE",
+                    (user_id, int(other_id)))
+        conn.commit()
     cur.close(); conn.close()
-    return resp(200, {"messages": [dict(zip(cols, r)) for r in rows]})
+    return resp(200, {"messages": messages})
+
+def get_chat_contacts(conn, user_id, role):
+    """Список собеседников с последним сообщением и счётчиком непрочитанного."""
+    cur = conn.cursor()
+    if role == "teacher":
+        cur.execute("SELECT id, name, avatar, COALESCE(level,'') FROM users WHERE role='student' ORDER BY name")
+    else:
+        cur.execute("SELECT id, name, avatar, COALESCE(level,'') FROM users WHERE role='teacher' ORDER BY name")
+    people = [{"id": r[0], "name": r[1], "avatar": r[2], "level": r[3],
+               "last_text": "", "last_at": None, "unread": 0} for r in cur.fetchall()]
+
+    if people:
+        by_id = {p["id"]: p for p in people}
+        ids = ",".join(str(i) for i in by_id.keys())
+        cur.execute(
+            f"""SELECT DISTINCT ON (partner) partner, text, file_name, created_at FROM (
+                    SELECT CASE WHEN from_user_id={user_id} THEN to_user_id ELSE from_user_id END AS partner,
+                           text, COALESCE(file_name,'') AS file_name, created_at
+                    FROM messages
+                    WHERE (from_user_id={user_id} AND to_user_id IN ({ids}))
+                       OR (to_user_id={user_id} AND from_user_id IN ({ids}))
+                ) t ORDER BY partner, created_at DESC"""
+        )
+        for pid, text, fname, created in cur.fetchall():
+            if pid in by_id:
+                by_id[pid]["last_text"] = text or (f"Файл: {fname}" if fname else "")
+                by_id[pid]["last_at"] = created
+
+        cur.execute(
+            f"""SELECT from_user_id, COUNT(*) FROM messages
+                WHERE to_user_id={user_id} AND is_read=FALSE AND from_user_id IN ({ids})
+                GROUP BY from_user_id"""
+        )
+        for pid, cnt in cur.fetchall():
+            if pid in by_id:
+                by_id[pid]["unread"] = cnt
+
+    groups = []
+    if role == "teacher":
+        cur.execute("SELECT id, name, color FROM student_groups WHERE teacher_id=%s ORDER BY name", (user_id,))
+        groups = [{"id": r[0], "name": r[1], "color": r[2], "students": []} for r in cur.fetchall()]
+        if groups:
+            gmap = {g["id"]: g for g in groups}
+            gids = ",".join(str(i) for i in gmap.keys())
+            cur.execute(
+                f"""SELECT gm.group_id, u.id, u.name, u.avatar FROM group_members gm
+                    JOIN users u ON u.id=gm.student_id WHERE gm.group_id IN ({gids}) ORDER BY u.name"""
+            )
+            for gid, sid, sname, savatar in cur.fetchall():
+                if gid in gmap:
+                    gmap[gid]["students"].append({"id": sid, "name": sname, "avatar": savatar})
+
+    cur.close(); conn.close()
+    return resp(200, {"contacts": people, "groups": groups})
+
+def _store_chat_file(body):
+    """Сохранить вложение в S3, вернуть (url, name, type)."""
+    data_b64 = body.get("file_data")
+    if not data_b64:
+        return "", "", ""
+    import base64, uuid, boto3
+    raw = base64.b64decode(data_b64.split(",")[-1])
+    if len(raw) > 15 * 1024 * 1024:
+        raise ValueError("Файл больше 15 МБ")
+    name = (body.get("file_name") or "file").strip()
+    ftype = body.get("file_type") or "file"
+    ext = name.rsplit(".", 1)[-1] if "." in name else ("webm" if ftype == "audio" else "bin")
+    key = f"chat/{uuid.uuid4().hex}.{ext}"
+    s3 = boto3.client("s3", endpoint_url="https://bucket.poehali.dev",
+                      aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],
+                      aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"])
+    s3.put_object(Bucket="files", Key=key, Body=raw,
+                  ContentType=body.get("mime") or "application/octet-stream")
+    url = f"https://cdn.poehali.dev/projects/{os.environ['AWS_ACCESS_KEY_ID']}/bucket/{key}"
+    return url, name, ftype
 
 def send_message(event, conn, user_id, user_name):
     body = json.loads(event.get("body") or "{}")
     to_id = body.get("to_user_id")
-    text = body.get("text", "").strip()
-    if not to_id or not text:
+    group_id = body.get("group_id")
+    text = (body.get("text") or "").strip()
+
+    try:
+        file_url, file_name, file_type = _store_chat_file(body)
+    except Exception as e:
         conn.close()
-        return resp(400, {"error": "Укажите получателя и текст"})
+        return resp(400, {"error": str(e) or "Не удалось загрузить файл"})
+
+    if not text and not file_url:
+        conn.close()
+        return resp(400, {"error": "Напишите сообщение или прикрепите файл"})
+    if not to_id and not group_id:
+        conn.close()
+        return resp(400, {"error": "Укажите получателя"})
+
+    audio_sec = int(body.get("audio_sec") or 0)
     cur = conn.cursor()
-    cur.execute("INSERT INTO messages (from_user_id, to_user_id, text) VALUES (%s,%s,%s) RETURNING id",
-                (user_id, to_id, text))
+
+    if group_id:
+        cur.execute("SELECT name FROM student_groups WHERE id=%s AND teacher_id=%s", (group_id, user_id))
+        g = cur.fetchone()
+        if not g:
+            cur.close(); conn.close()
+            return resp(404, {"error": "Группа не найдена"})
+        cur.execute("SELECT student_id FROM group_members WHERE group_id=%s", (group_id,))
+        members = [r[0] for r in cur.fetchall()]
+        for sid in members:
+            cur.execute(
+                """INSERT INTO messages (from_user_id, to_user_id, text, file_url, file_name, file_type, audio_sec, group_id)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
+                (user_id, sid, text, file_url, file_name, file_type, audio_sec, group_id)
+            )
+            cur.execute("INSERT INTO notifications (user_id, text, type) VALUES (%s,%s,'chat')",
+                        (sid, f"Сообщение группе «{g[0]}» от {user_name}"))
+        conn.commit(); cur.close(); conn.close()
+        return resp(200, {"ok": True, "sent": len(members)})
+
+    cur.execute(
+        """INSERT INTO messages (from_user_id, to_user_id, text, file_url, file_name, file_type, audio_sec)
+           VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
+        (user_id, to_id, text, file_url, file_name, file_type, audio_sec)
+    )
     msg_id = cur.fetchone()[0]
     cur.execute("INSERT INTO notifications (user_id, text, type) VALUES (%s,%s,'chat')",
                 (to_id, f"Новое сообщение от {user_name}"))
     conn.commit(); cur.close(); conn.close()
-    return resp(200, {"ok": True, "id": msg_id})
+    return resp(200, {"ok": True, "id": msg_id, "file_url": file_url})
 
 
 # ── Notifications ──────────────────────────────────────────────────────────────
