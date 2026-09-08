@@ -193,11 +193,11 @@ def reset_request(event):
     cur.execute("SELECT name FROM users WHERE id=%s", (user_id,))
     student_name = cur.fetchone()[0]
     cur.execute("SELECT id FROM users WHERE role='teacher'")
-    for (tid,) in cur.fetchall():
-        cur.execute(
-            "INSERT INTO notifications (user_id, text, type) VALUES (%s, %s, 'system')",
-            (tid, f"Студент {student_name} запросил сброс пароля")
-        )
+    teachers = [r[0] for r in cur.fetchall()]
+    if teachers:
+        text = f"Студент {student_name} запросил сброс пароля"
+        values = ",".join(cur.mogrify("(%s,%s,'system')", (tid, text)).decode() for tid in teachers)
+        cur.execute(f"INSERT INTO notifications (user_id, text, type) VALUES {values}")
     conn.commit(); cur.close(); conn.close()
     return {"statusCode": 200, "headers": CORS, "body": json.dumps({"ok": True})}
 

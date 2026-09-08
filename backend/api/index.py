@@ -15,7 +15,7 @@ import json
 import os
 from datetime import datetime, timedelta
 import psycopg2
-from mailer import send_email, lesson_started_email, lesson_reminder_email, _wrap
+from mailer import send_email, send_bulk, lesson_started_email, lesson_reminder_email, _wrap
 
 JITSI_HOST = "hispania-35.ru"
 MONTHS_RU = ["января", "февраля", "марта", "апреля", "мая", "июня",
@@ -53,6 +53,22 @@ def get_user(token, conn):
 
 def resp(status, data):
     return {"statusCode": status, "headers": CORS, "body": json.dumps(data, default=str)}
+
+def notify_many(cur, pairs, ntype):
+    """Одним запросом создать уведомления: pairs = [(user_id, text), ...]"""
+    pairs = list(pairs)
+    if not pairs:
+        return
+    values = ",".join(cur.mogrify("(%s,%s,%s)", (uid, text, ntype)).decode() for uid, text in pairs)
+    cur.execute(f"INSERT INTO notifications (user_id, text, type) VALUES {values}")
+
+def link_students(cur, lesson_id, student_ids):
+    """Одним запросом записать учеников на занятие."""
+    ids = list(student_ids)
+    if not ids:
+        return
+    values = ",".join(cur.mogrify("(%s,%s)", (lesson_id, sid)).decode() for sid in ids)
+    cur.execute(f"INSERT INTO lesson_students (lesson_id, student_id) VALUES {values}")
 
 def handler(event: dict, context) -> dict:
     if event.get("httpMethod") == "OPTIONS":
@@ -200,9 +216,7 @@ def create_material(event, conn, user_id, role):
     )
     mat_id = cur.fetchone()[0]
     cur.execute("SELECT id FROM users WHERE role='student'")
-    for (sid,) in cur.fetchall():
-        cur.execute("INSERT INTO notifications (user_id, text, type) VALUES (%s,%s,'material')",
-                    (sid, f"Новый материал: {title}"))
+    notify_many(cur, [(r[0], f"Новый материал: {title}") for r in cur.fetchall()], "material")
     conn.commit(); cur.close(); conn.close()
     return resp(200, {"ok": True, "id": mat_id})
 
@@ -284,12 +298,10 @@ def create_lesson(event, conn, user_id, role):
         cur.execute(f"SELECT id FROM users WHERE role='student' AND id IN ({id_list})")
     else:
         cur.execute("SELECT id FROM users WHERE role='student'")
-    added = 0
-    for (sid,) in cur.fetchall():
-        cur.execute("INSERT INTO lesson_students (lesson_id, student_id) VALUES (%s,%s)", (lesson_id, sid))
-        cur.execute("INSERT INTO notifications (user_id, text, type) VALUES (%s,%s,'calendar')",
-                    (sid, f"Новое занятие {lesson_date} {lesson_time}: {topic}"))
-        added += 1
+    sids = [r[0] for r in cur.fetchall()]
+    added = len(sids)
+    link_students(cur, lesson_id, sids)
+    notify_many(cur, [(sid, f"Новое занятие {lesson_date} {lesson_time}: {topic}") for sid in sids], "calendar")
 
     cur.execute("SELECT COALESCE(notify_new_lesson,TRUE) FROM users WHERE id=%s", (user_id,))
     r = cur.fetchone()
@@ -353,25 +365,23 @@ def move_lesson(event, conn, user_id, role):
                 pass
         added = new_students - old_students
         removed = old_students - new_students
-        for sid in added:
-            cur.execute("INSERT INTO lesson_students (lesson_id, student_id) VALUES (%s,%s)", (lesson_id, sid))
-            cur.execute("INSERT INTO notifications (user_id, text, type) VALUES (%s,%s,'calendar')",
-                        (sid, f"Вас записали на занятие {lesson_date} {lesson_time}: {topic}"))
-        for sid in removed:
-            cur.execute("DELETE FROM lesson_students WHERE lesson_id=%s AND student_id=%s", (lesson_id, sid))
-            cur.execute("INSERT INTO notifications (user_id, text, type) VALUES (%s,%s,'calendar')",
-                        (sid, f"Вас убрали с занятия {old_date} {str(old_time)[:5]}: {old_topic}"))
+        link_students(cur, lesson_id, added)
+        notify_many(cur, [(sid, f"Вас записали на занятие {lesson_date} {lesson_time}: {topic}")
+                          for sid in added], "calendar")
+        if removed:
+            drop_list = ",".join(str(i) for i in removed)
+            cur.execute(f"DELETE FROM lesson_students WHERE lesson_id=%s AND student_id IN ({drop_list})",
+                        (lesson_id,))
+            notify_many(cur, [(sid, f"Вас убрали с занятия {old_date} {str(old_time)[:5]}: {old_topic}")
+                              for sid in removed], "calendar")
 
     changed_time = str(old_date) != str(lesson_date) or str(old_time)[:5] != str(lesson_time)[:5]
     changed_topic = old_topic != topic
     if changed_time or changed_topic:
         stay = new_students & old_students if raw_ids is not None else old_students
-        for sid in stay:
-            if changed_time:
-                text = f"Занятие перенесено на {lesson_date} {lesson_time}: {topic}"
-            else:
-                text = f"Занятие {lesson_date} {lesson_time} изменено: {topic}"
-            cur.execute("INSERT INTO notifications (user_id, text, type) VALUES (%s,%s,'calendar')", (sid, text))
+        text = (f"Занятие перенесено на {lesson_date} {lesson_time}: {topic}" if changed_time
+                else f"Занятие {lesson_date} {lesson_time} изменено: {topic}")
+        notify_many(cur, [(sid, text) for sid in stay], "calendar")
 
     conn.commit(); cur.close(); conn.close()
     return resp(200, {"ok": True})
@@ -398,9 +408,8 @@ def delete_lesson(event, conn, user_id, role):
     student_ids = [r[0] for r in cur.fetchall()]
     cur.execute("DELETE FROM lesson_students WHERE lesson_id=%s", (lesson_id,))
     cur.execute("DELETE FROM lessons WHERE id=%s AND teacher_id=%s", (lesson_id, user_id))
-    for sid in student_ids:
-        cur.execute("INSERT INTO notifications (user_id, text, type) VALUES (%s,%s,'calendar')",
-                    (sid, f"Занятие отменено {l_date} {str(l_time)[:5]}: {topic}"))
+    notify_many(cur, [(sid, f"Занятие отменено {l_date} {str(l_time)[:5]}: {topic}")
+                      for sid in student_ids], "calendar")
 
     cur.execute("SELECT COALESCE(notify_cancel,TRUE) FROM users WHERE id=%s", (user_id,))
     r = cur.fetchone()
@@ -591,7 +600,9 @@ def _send_unread_digests(cur):
             LIMIT 10"""
     )
     targets = cur.fetchall()
-    sent = 0
+    if not targets:
+        return 0
+    letters = []
     for uid, uname, uemail, cnt in targets:
         word = "сообщение" if cnt == 1 else ("сообщения" if cnt < 5 else "сообщений")
         html = _wrap("У вас есть непрочитанные сообщения", [
@@ -599,13 +610,13 @@ def _send_unread_digests(cur):
             f"В чате платформы вас ждёт <b>{cnt} непрочитанных {word}</b>.",
             "Загляните в раздел «Чат», чтобы ответить.",
         ])
-        if send_email(uemail, f"Непрочитанных сообщений: {cnt}", html):
-            sent += 1
-        cur.execute(
-            "UPDATE messages SET email_notified=TRUE WHERE to_user_id=%s AND is_read=FALSE AND COALESCE(email_notified,FALSE)=FALSE",
-            (uid,)
-        )
-    return sent
+        letters.append((uemail, f"Непрочитанных сообщений: {cnt}", html))
+    id_list = ",".join(str(t[0]) for t in targets)
+    cur.execute(
+        f"""UPDATE messages SET email_notified=TRUE
+            WHERE to_user_id IN ({id_list}) AND is_read=FALSE AND COALESCE(email_notified,FALSE)=FALSE"""
+    )
+    return send_bulk(letters)
 
 def get_chat_contacts(conn, user_id, role):
     """Список собеседников с последним сообщением и счётчиком непрочитанного."""
@@ -717,14 +728,17 @@ def send_message(event, conn, user_id, user_name):
             return resp(404, {"error": "Группа не найдена"})
         cur.execute("SELECT student_id FROM group_members WHERE group_id=%s", (group_id,))
         members = [r[0] for r in cur.fetchall()]
-        for sid in members:
-            cur.execute(
-                """INSERT INTO messages (from_user_id, to_user_id, text, file_url, file_name, file_type, audio_sec, group_id)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
-                (user_id, sid, text, file_url, file_name, file_type, audio_sec, group_id)
+        if members:
+            values = ",".join(
+                cur.mogrify("(%s,%s,%s,%s,%s,%s,%s,%s)",
+                            (user_id, sid, text, file_url, file_name, file_type, audio_sec, group_id)).decode()
+                for sid in members
             )
-            cur.execute("INSERT INTO notifications (user_id, text, type) VALUES (%s,%s,'chat')",
-                        (sid, f"Сообщение группе «{g[0]}» от {user_name}"))
+            cur.execute(
+                "INSERT INTO messages (from_user_id, to_user_id, text, file_url, file_name, file_type, audio_sec, group_id)"
+                f" VALUES {values}"
+            )
+            notify_many(cur, [(sid, f"Сообщение группе «{g[0]}» от {user_name}") for sid in members], "chat")
         conn.commit(); cur.close(); conn.close()
         return resp(200, {"ok": True, "sent": len(members)})
 
@@ -916,22 +930,18 @@ def start_lesson(event, conn, user_id, role):
     )
     students = cur.fetchall()
     url = room_url(lesson_id)
-    sent = 0
 
-    for sid, sname, semail in students:
-        cur.execute(
-            "INSERT INTO notifications (user_id, text, type) VALUES (%s,%s,'calendar')",
-            (sid, f"Урок «{topic}» начался — подключайтесь: {url}")
-        )
-        cur.execute(
-            "INSERT INTO messages (from_user_id, to_user_id, text) VALUES (%s,%s,%s)",
-            (user_id, sid, f"Урок «{topic}» начался. Подключайтесь: {url}")
-        )
-        if send_email(semail, f"Урок «{topic}» начался",
-                      lesson_started_email(sname, topic, url)):
-            sent += 1
+    notify_many(cur, [(sid, f"Урок «{topic}» начался — подключайтесь: {url}")
+                      for sid, _, _ in students], "calendar")
+    if students:
+        msg_text = f"Урок «{topic}» начался. Подключайтесь: {url}"
+        values = ",".join(cur.mogrify("(%s,%s,%s)", (user_id, sid, msg_text)).decode()
+                          for sid, _, _ in students)
+        cur.execute(f"INSERT INTO messages (from_user_id, to_user_id, text) VALUES {values}")
 
     conn.commit(); cur.close(); conn.close()
+    sent = send_bulk([(semail, f"Урок «{topic}» начался", lesson_started_email(sname, topic, url))
+                      for _, sname, semail in students])
     return resp(200, {"ok": True, "room_url": url, "notified": len(students), "emails_sent": sent})
 
 def send_reminders(conn):
@@ -946,59 +956,57 @@ def send_reminders(conn):
            FROM lessons l WHERE l.lesson_date IN (%s, %s)""",
         (today, tomorrow)
     )
-    lessons = cur.fetchall()
-    result = []
-
-    for lesson_id, topic, l_date, l_time, teacher_id in lessons:
-        hour = l_time.hour
-        early = hour < 11
-
-        if early:
+    due = {}
+    for lesson_id, topic, l_date, l_time, teacher_id in cur.fetchall():
+        if l_time.hour < 11:
             if not (l_date == tomorrow and now.hour == 20):
                 continue
-            kind = "evening"
-            hours_text = "завтра утром"
+            kind, hours_text = "evening", "завтра утром"
         else:
-            start = datetime.combine(l_date, l_time)
-            delta = (start - now).total_seconds() / 3600
+            delta = (datetime.combine(l_date, l_time) - now).total_seconds() / 3600
             if not (2.5 <= delta <= 3.5):
                 continue
-            kind = "3h"
-            hours_text = "через 3 часа"
+            kind, hours_text = "3h", "через 3 часа"
+        due[lesson_id] = (topic, l_date, l_time, teacher_id, kind, hours_text)
 
-        cur.execute(
-            """SELECT u.id, u.name, u.email FROM lesson_students ls
-               JOIN users u ON u.id=ls.student_id WHERE ls.lesson_id=%s""",
-            (lesson_id,)
-        )
-        url = room_url(lesson_id)
+    if not due:
+        cur.close(); conn.close()
+        return resp(200, {"ok": True, "sent": 0, "details": []})
+
+    id_list = ",".join(str(i) for i in due.keys())
+    cur.execute(
+        f"""SELECT ls.lesson_id, u.id, u.name, u.email FROM lesson_students ls
+            JOIN users u ON u.id=ls.student_id WHERE ls.lesson_id IN ({id_list})"""
+    )
+    students = cur.fetchall()
+    cur.execute(f"SELECT lesson_id, student_id, kind FROM lesson_reminders WHERE lesson_id IN ({id_list})")
+    already = set(cur.fetchall())
+
+    result, notif_rows, msg_rows, rem_rows, letters = [], [], [], [], []
+    for lid, sid, sname, semail in students:
+        topic, l_date, l_time, teacher_id, kind, hours_text = due[lid]
+        if (lid, sid, kind) in already:
+            continue
+        url = room_url(lid)
         time_str = l_time.strftime("%H:%M")
         date_str = ru_date(l_date)
+        notif_rows.append((sid, f"Напоминание: {hours_text} занятие «{topic}» в {time_str}"))
+        msg_rows.append((teacher_id, sid,
+                         f"Напоминание: {hours_text} урок «{topic}» ({date_str}, {time_str}). Ссылка: {url}"))
+        rem_rows.append((lid, sid, kind))
+        letters.append((semail, f"Напоминание: урок «{topic}» {hours_text}",
+                        lesson_reminder_email(sname, topic, time_str, date_str, url, hours_text)))
+        result.append({"lesson_id": lid, "student_id": sid, "kind": kind})
 
-        for sid, sname, semail in cur.fetchall():
-            cur.execute(
-                "SELECT id FROM lesson_reminders WHERE lesson_id=%s AND student_id=%s AND kind=%s",
-                (lesson_id, sid, kind)
-            )
-            if cur.fetchone():
-                continue
-            cur.execute(
-                "INSERT INTO notifications (user_id, text, type) VALUES (%s,%s,'calendar')",
-                (sid, f"Напоминание: {hours_text} занятие «{topic}» в {time_str}")
-            )
-            cur.execute(
-                "INSERT INTO messages (from_user_id, to_user_id, text) VALUES (%s,%s,%s)",
-                (teacher_id, sid, f"Напоминание: {hours_text} урок «{topic}» ({date_str}, {time_str}). Ссылка: {url}")
-            )
-            send_email(semail, f"Напоминание: урок «{topic}» {hours_text}",
-                       lesson_reminder_email(sname, topic, time_str, date_str, url, hours_text))
-            cur.execute(
-                "INSERT INTO lesson_reminders (lesson_id, student_id, kind) VALUES (%s,%s,%s)",
-                (lesson_id, sid, kind)
-            )
-            result.append({"lesson_id": lesson_id, "student_id": sid, "kind": kind})
+    if rem_rows:
+        notify_many(cur, notif_rows, "calendar")
+        values = ",".join(cur.mogrify("(%s,%s,%s)", r).decode() for r in msg_rows)
+        cur.execute(f"INSERT INTO messages (from_user_id, to_user_id, text) VALUES {values}")
+        values = ",".join(cur.mogrify("(%s,%s,%s)", r).decode() for r in rem_rows)
+        cur.execute(f"INSERT INTO lesson_reminders (lesson_id, student_id, kind) VALUES {values}")
 
     conn.commit(); cur.close(); conn.close()
+    send_bulk(letters)
     return resp(200, {"ok": True, "sent": len(result), "details": result})
 
 def get_students(conn):
@@ -1053,6 +1061,13 @@ def update_student(event, conn, role):
     conn.commit(); cur.close(); conn.close()
     return resp(200, {"ok": True})
 
+def add_members(cur, group_id, student_ids):
+    ids = list(student_ids)
+    if not ids:
+        return
+    values = ",".join(cur.mogrify("(%s,%s)", (group_id, sid)).decode() for sid in ids)
+    cur.execute(f"INSERT INTO group_members (group_id, student_id) VALUES {values}")
+
 def _group_ids(raw):
     ids = []
     for s in raw or []:
@@ -1103,8 +1118,7 @@ def create_group(event, conn, user_id, role):
         (user_id, name, (body.get("description") or "").strip(), body.get("color") or "primary")
     )
     group_id = cur.fetchone()[0]
-    for sid in _group_ids(body.get("student_ids")):
-        cur.execute("INSERT INTO group_members (group_id, student_id) VALUES (%s,%s)", (group_id, sid))
+    add_members(cur, group_id, _group_ids(body.get("student_ids")))
     conn.commit(); cur.close(); conn.close()
     return resp(200, {"ok": True, "id": group_id})
 
@@ -1131,8 +1145,7 @@ def update_group(event, conn, user_id, role):
         new_ids = set(_group_ids(body.get("student_ids")))
         cur.execute("SELECT student_id FROM group_members WHERE group_id=%s", (group_id,))
         old_ids = set(r[0] for r in cur.fetchall())
-        for sid in new_ids - old_ids:
-            cur.execute("INSERT INTO group_members (group_id, student_id) VALUES (%s,%s)", (group_id, sid))
+        add_members(cur, group_id, new_ids - old_ids)
         drop = old_ids - new_ids
         if drop:
             drop_list = ",".join(str(i) for i in drop)

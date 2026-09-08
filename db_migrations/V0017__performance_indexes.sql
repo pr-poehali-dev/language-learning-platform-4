@@ -1,0 +1,14 @@
+CREATE INDEX IF NOT EXISTS idx_sessions_token_exp ON sessions (token, expires_at);
+CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications (user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notifications_unread ON notifications (user_id) WHERE is_read = FALSE;
+CREATE INDEX IF NOT EXISTS idx_lesson_students_lesson ON lesson_students (lesson_id);
+CREATE INDEX IF NOT EXISTS idx_lesson_students_student ON lesson_students (student_id);
+CREATE INDEX IF NOT EXISTS idx_lessons_teacher_date ON lessons (teacher_id, lesson_date, lesson_time);
+CREATE INDEX IF NOT EXISTS idx_lessons_date ON lessons (lesson_date);
+CREATE INDEX IF NOT EXISTS idx_homework_teacher ON homework (teacher_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_homework_student ON homework (student_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_materials_created ON materials (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_users_role_name ON users (role, name);
+CREATE INDEX IF NOT EXISTS idx_messages_from_created ON messages (from_user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_messages_to_created ON messages (to_user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_group_members_student ON group_members (student_id);

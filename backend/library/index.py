@@ -239,18 +239,16 @@ def assign_item(event, conn, user_id, role):
         conn.close()
         return resp(400, {"error": "Выберите ученика или группу"})
 
-    added = 0
-    for sid in student_ids:
-        cur.execute(
-            """INSERT INTO library_assignments (item_id, student_id, group_id, assigned_by)
-               VALUES (%s,%s,%s,%s) ON CONFLICT (item_id, student_id) DO NOTHING""",
-            (item_id, sid, group_id, user_id)
-        )
-        cur.execute(
-            "INSERT INTO notifications (user_id, text, type) VALUES (%s,%s,'material')",
-            (sid, f"Вам выдана книга: {title}")
-        )
-        added += 1
+    added = len(student_ids)
+    values = ",".join(cur.mogrify("(%s,%s,%s,%s)", (item_id, sid, group_id, user_id)).decode()
+                      for sid in student_ids)
+    cur.execute(
+        f"""INSERT INTO library_assignments (item_id, student_id, group_id, assigned_by)
+            VALUES {values} ON CONFLICT (item_id, student_id) DO NOTHING"""
+    )
+    values = ",".join(cur.mogrify("(%s,%s,'material')", (sid, f"Вам выдана книга: {title}")).decode()
+                      for sid in student_ids)
+    cur.execute(f"INSERT INTO notifications (user_id, text, type) VALUES {values}")
 
     conn.commit()
     cur.close()
