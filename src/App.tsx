@@ -27,22 +27,39 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [lessonRoom, setLessonRoom] = useState<string | null>(null);
 
-  // Восстановить сессию из localStorage
+  // Восстановить сессию: сразу из кеша, затем сверить с сервером
   useEffect(() => {
     const token = localStorage.getItem("hispania_token");
     if (!token) { setChecking(false); return; }
+
+    const cached = localStorage.getItem("hispania_user");
+    if (cached) {
+      try { setUser(JSON.parse(cached) as User); setChecking(false); } catch { /* ignore */ }
+    }
+
     apiMe().then(res => {
       if (res.user) {
-        setUser({ id: res.user.id, name: res.user.name, role: res.user.role, level: res.user.level, avatar: res.user.avatar });
-      } else {
+        const u: User = { id: res.user.id, name: res.user.name, role: res.user.role, level: res.user.level, avatar: res.user.avatar };
+        setUser(u);
+        localStorage.setItem("hispania_user", JSON.stringify(u));
+      } else if (res.error) {
         localStorage.removeItem("hispania_token");
+        localStorage.removeItem("hispania_user");
+        setUser(null);
       }
       setChecking(false);
     }).catch(() => setChecking(false));
   }, []);
 
+  const handleLogin = (u: User) => {
+    localStorage.setItem("hispania_user", JSON.stringify(u));
+    setUser(u);
+    setActivePage("dashboard");
+  };
+
   const handleLogout = async () => {
     await apiLogout();
+    localStorage.removeItem("hispania_user");
     setUser(null);
   };
 
@@ -62,7 +79,7 @@ export default function App() {
   if (!user) {
     return (
       <TooltipProvider>
-        <LoginPage onLogin={(u) => { setUser(u); setActivePage("dashboard"); }} />
+        <LoginPage onLogin={handleLogin} />
       </TooltipProvider>
     );
   }
