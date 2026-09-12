@@ -64,6 +64,15 @@ def ext_public_url(key):
     return f"{endpoint}/{os.environ['LIB_S3_BUCKET']}/{key}"
 
 
+def ext_signed_url(key, file_name=None):
+    params = {"Bucket": os.environ["LIB_S3_BUCKET"], "Key": key}
+    if file_name:
+        params["ResponseContentDisposition"] = f'inline; filename="{file_name}"'
+    return ext_client().generate_presigned_url(
+        "get_object", Params=params, ExpiresIn=86400
+    )
+
+
 def auth(event, conn):
     token = (event.get("headers") or {}).get("X-Auth-Token") or (event.get("headers") or {}).get("x-auth-token")
     if not token:
@@ -120,14 +129,14 @@ def list_items(conn, user_id, role):
     if role == "teacher":
         cur.execute(
             """SELECT id, title, author, description, kind, file_url, file_name,
-                      mime, size_bytes, duration_sec, created_at
+                      mime, size_bytes, duration_sec, created_at, file_key, storage
                FROM library_items WHERE teacher_id=%s ORDER BY created_at DESC""",
             (user_id,)
         )
     else:
         cur.execute(
             """SELECT i.id, i.title, i.author, i.description, i.kind, i.file_url, i.file_name,
-                      i.mime, i.size_bytes, i.duration_sec, i.created_at
+                      i.mime, i.size_bytes, i.duration_sec, i.created_at, i.file_key, i.storage
                FROM library_items i JOIN library_assignments a ON a.item_id=i.id
                WHERE a.student_id=%s ORDER BY a.created_at DESC""",
             (user_id,)
@@ -149,9 +158,17 @@ def list_items(conn, user_id, role):
             if item_id in by_id:
                 by_id[item_id]["students"].append({"id": sid, "name": sname, "avatar": savatar})
 
+    direct = ext_storage_ready()
+    if direct:
+        for it in items:
+            if it.get("storage") == "external" and it.get("file_key"):
+                it["file_url"] = ext_signed_url(it["file_key"], it.get("file_name"))
+    for it in items:
+        it.pop("file_key", None)
+        it.pop("storage", None)
+
     cur.close()
     conn.close()
-    direct = ext_storage_ready()
     return resp(200, {"items": items, "direct_upload": direct,
                       "max_mb": MAX_DIRECT_MB if direct else MAX_MB})
 
@@ -217,7 +234,7 @@ def confirm_upload(event, conn, user_id, role):
     conn.commit()
     cur.close()
     conn.close()
-    return resp(200, {"ok": True, "id": item_id, "file_url": url, "kind": kind})
+    return resp(200, {"ok": True, "id": item_id, "file_url": ext_signed_url(key, file_name), "kind": kind})
 
 
 def upload_item(event, conn, user_id, role):
