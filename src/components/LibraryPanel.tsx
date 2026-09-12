@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import Icon from "@/components/ui/icon";
 import {
-  apiGetLibrary, apiUploadLibraryItem, apiDeleteLibraryItem, apiAssignLibraryItem,
+  apiGetLibrary, apiUploadLibraryItem, apiUploadLibraryLarge, apiDeleteLibraryItem, apiAssignLibraryItem,
   apiGetStudents, apiGetGroups,
   type LibraryItem, type StudentInfo, type StudentGroup,
 } from "@/lib/api";
@@ -9,8 +9,11 @@ import {
 const fmtSize = (b?: number) => {
   if (!b) return "";
   if (b < 1024 * 1024) return `${Math.round(b / 1024)} КБ`;
-  return `${(b / 1024 / 1024).toFixed(1)} МБ`;
+  if (b < 1024 * 1024 * 1024) return `${(b / 1024 / 1024).toFixed(1)} МБ`;
+  return `${(b / 1024 / 1024 / 1024).toFixed(2)} ГБ`;
 };
+
+const SMALL_MB = 20;
 
 const kindIcon = (k: string) => (k === "audio" ? "Music" : "BookOpen");
 
@@ -25,7 +28,11 @@ export default function LibraryPanel({ isTeacher }: { isTeacher: boolean }) {
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState({ title: "", author: "", description: "" });
   const [file, setFile] = useState<{ name: string; mime: string; data: string; size: number } | null>(null);
+  const [rawFile, setRawFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [maxMb, setMaxMb] = useState(60);
+  const [directUpload, setDirectUpload] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [assignItem, setAssignItem] = useState<LibraryItem | null>(null);
@@ -40,7 +47,11 @@ export default function LibraryPanel({ isTeacher }: { isTeacher: boolean }) {
 
   const load = useCallback(() => {
     apiGetLibrary()
-      .then(res => { if (res.items) setItems(res.items); })
+      .then(res => {
+        if (res.items) setItems(res.items);
+        if (res.max_mb) setMaxMb(res.max_mb);
+        setDirectUpload(!!res.direct_upload);
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
@@ -54,34 +65,44 @@ export default function LibraryPanel({ isTeacher }: { isTeacher: boolean }) {
   }, [isTeacher]);
 
   const pickFile = (f: File) => {
-    if (f.size > 60 * 1024 * 1024) { setErr("Файл больше 60 МБ"); return; }
-    const r = new FileReader();
-    r.onload = () => {
-      setFile({ name: f.name, mime: f.type || "application/octet-stream", data: String(r.result), size: f.size });
-      setForm(prev => ({ ...prev, title: prev.title || f.name.replace(/\.[^.]+$/, "") }));
-      setErr("");
-    };
-    r.readAsDataURL(f);
+    if (f.size > maxMb * 1024 * 1024) { setErr(`Файл больше ${maxMb} МБ`); return; }
+    setErr("");
+    setRawFile(f);
+    setForm(prev => ({ ...prev, title: prev.title || f.name.replace(/\.[^.]+$/, "") }));
+
+    // Маленькие файлы шлём через сервер, большие — напрямую в облако
+    if (!directUpload || f.size <= SMALL_MB * 1024 * 1024) {
+      const r = new FileReader();
+      r.onload = () => setFile({ name: f.name, mime: f.type || "application/octet-stream", data: String(r.result), size: f.size });
+      r.readAsDataURL(f);
+    } else {
+      setFile({ name: f.name, mime: f.type || "application/octet-stream", data: "", size: f.size });
+    }
+  };
+
+  const resetForm = () => {
+    setShowAdd(false); setFile(null); setRawFile(null); setProgress(0);
+    setForm({ title: "", author: "", description: "" });
   };
 
   const upload = async () => {
     if (!form.title.trim()) { setErr("Укажите название"); return; }
-    if (!file) { setErr("Прикрепите файл"); return; }
-    setUploading(true); setErr("");
+    if (!file || !rawFile) { setErr("Прикрепите файл"); return; }
+    setUploading(true); setErr(""); setProgress(0);
+    const meta = { title: form.title.trim(), author: form.author.trim(), description: form.description.trim() };
     try {
-      const res = await apiUploadLibraryItem({
-        title: form.title.trim(), author: form.author.trim(), description: form.description.trim(),
-        file_data: file.data, file_name: file.name, mime: file.mime,
-      });
+      const big = directUpload && rawFile.size > SMALL_MB * 1024 * 1024;
+      const res = big
+        ? await apiUploadLibraryLarge(rawFile, meta, setProgress)
+        : await apiUploadLibraryItem({ ...meta, file_data: file.data, file_name: file.name, mime: file.mime });
       if (res.ok) {
-        setShowAdd(false); setFile(null);
-        setForm({ title: "", author: "", description: "" });
+        resetForm();
         setMsg("Файл загружен в библиотеку");
         setTimeout(() => setMsg(""), 4000);
         load();
       } else setErr(res.error || "Не удалось загрузить");
     } catch {
-      setErr("Нет связи с сервером");
+      setErr("Загрузка прервалась. Проверьте интернет и попробуйте снова.");
     } finally {
       setUploading(false);
     }
@@ -257,12 +278,12 @@ export default function LibraryPanel({ isTeacher }: { isTeacher: boolean }) {
       {/* Загрузка */}
       {showAdd && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="fixed inset-0 bg-black/40" onClick={() => !uploading && setShowAdd(false)} />
+          <div className="fixed inset-0 bg-black/40" onClick={() => !uploading && resetForm()} />
           <div className="relative bg-card border border-border rounded-xl shadow-xl w-full max-w-md p-5 animate-scale-in max-h-[90vh] overflow-y-auto">
             <h2 className="font-montserrat font-bold text-base text-foreground mb-4">Загрузить в библиотеку</h2>
 
             <input ref={fileRef} type="file" className="hidden"
-              accept=".pdf,.epub,.fb2,.doc,.docx,.txt,audio/*"
+              accept=".pdf,.epub,.fb2,.doc,.docx,.txt,.zip,audio/*,video/*"
               onChange={e => { const f = e.target.files?.[0]; if (f) pickFile(f); e.target.value = ""; }} />
 
             <button onClick={() => fileRef.current?.click()}
@@ -274,7 +295,7 @@ export default function LibraryPanel({ isTeacher }: { isTeacher: boolean }) {
                   {file ? file.name : "Выбрать файл"}
                 </span>
                 <span className="block text-xs text-muted-foreground font-ibm">
-                  {file ? fmtSize(file.size) : "PDF, EPUB, FB2, DOCX или аудио · до 60 МБ"}
+                  {file ? fmtSize(file.size) : `PDF, EPUB, FB2, DOCX, аудио и видео · до ${maxMb} МБ`}
                 </span>
               </span>
             </button>
@@ -297,10 +318,21 @@ export default function LibraryPanel({ isTeacher }: { isTeacher: boolean }) {
               </div>
             </div>
 
+            {uploading && (
+              <div className="mt-3">
+                <div className="h-2 rounded-full bg-muted overflow-hidden">
+                  <div className="h-full red-accent transition-all duration-200" style={{ width: `${progress || 3}%` }} />
+                </div>
+                <p className="text-xs text-muted-foreground font-ibm mt-1.5">
+                  {progress > 0 && progress < 100 ? `Загружено ${progress}%` : "Обработка файла..."}
+                </p>
+              </div>
+            )}
+
             {err && <p className="text-xs text-red-600 font-ibm mt-2">{err}</p>}
 
             <div className="flex gap-2 mt-4">
-              <button onClick={() => setShowAdd(false)} disabled={uploading}
+              <button onClick={resetForm} disabled={uploading}
                 className="flex-1 py-2 rounded-lg border border-border text-sm font-montserrat font-medium text-foreground hover:bg-muted transition-colors disabled:opacity-60">
                 Отмена
               </button>

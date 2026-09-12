@@ -493,7 +493,40 @@ export interface LibraryItem {
 
 export async function apiGetLibrary() {
   const r = await request(LIBRARY_URL);
-  return r.data as { items?: LibraryItem[]; error?: string };
+  return r.data as { items?: LibraryItem[]; direct_upload?: boolean; max_mb?: number; error?: string };
+}
+
+/** Загрузка большого файла: берём ссылку, льём файл прямо в облако, затем создаём карточку */
+export async function apiUploadLibraryLarge(
+  file: File,
+  meta: { title: string; author?: string; description?: string; duration_sec?: number },
+  onProgress?: (percent: number) => void,
+) {
+  const mime = file.type || "application/octet-stream";
+  const slot = await request(LIBRARY_URL + "?p=upload_url", {
+    method: "POST",
+    body: JSON.stringify({ file_name: file.name, mime, size: file.size }),
+  });
+  const s = slot.data as { upload_url?: string; key?: string; error?: string };
+  if (!s.upload_url || !s.key) return { error: s.error || "Не удалось начать загрузку" };
+
+  await new Promise<void>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", s.upload_url as string);
+    xhr.setRequestHeader("Content-Type", mime);
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && onProgress) onProgress(Math.round((e.loaded / e.total) * 100));
+    };
+    xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(`HTTP ${xhr.status}`)));
+    xhr.onerror = () => reject(new Error("network"));
+    xhr.send(file);
+  });
+
+  const r = await request(LIBRARY_URL + "?p=confirm", {
+    method: "POST",
+    body: JSON.stringify({ ...meta, key: s.key, file_name: file.name, mime, size: file.size }),
+  });
+  return r.data as { ok?: boolean; id?: number; file_url?: string; kind?: string; error?: string };
 }
 
 export async function apiUploadLibraryItem(data: {

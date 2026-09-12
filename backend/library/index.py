@@ -18,7 +18,8 @@ CORS = {
     "Access-Control-Max-Age": "86400",
 }
 
-MAX_MB = 60
+MAX_MB = 60          # прямая загрузка через функцию (мелкие файлы)
+MAX_DIRECT_MB = 300  # загрузка браузером напрямую в облако
 
 
 def resp(code, data):
@@ -38,6 +39,28 @@ def s3_client():
         aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],
         aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"],
     )
+
+
+def ext_storage_ready():
+    return all(os.environ.get(k) for k in
+               ("LIB_S3_ENDPOINT", "LIB_S3_BUCKET", "LIB_S3_KEY_ID", "LIB_S3_SECRET_KEY"))
+
+
+def ext_client():
+    import boto3
+    from botocore.config import Config
+    return boto3.client(
+        "s3",
+        endpoint_url=os.environ["LIB_S3_ENDPOINT"],
+        aws_access_key_id=os.environ["LIB_S3_KEY_ID"],
+        aws_secret_access_key=os.environ["LIB_S3_SECRET_KEY"],
+        config=Config(signature_version="s3v4"),
+    )
+
+
+def ext_public_url(key):
+    endpoint = os.environ["LIB_S3_ENDPOINT"].rstrip("/")
+    return f"{endpoint}/{os.environ['LIB_S3_BUCKET']}/{key}"
 
 
 def auth(event, conn):
@@ -76,6 +99,10 @@ def handler(event: dict, context) -> dict:
             return list_items(conn, user_id, role)
         if method == "POST" and action == "assign":
             return assign_item(event, conn, user_id, role)
+        if method == "POST" and action == "upload_url":
+            return upload_url(event, conn, user_id, role)
+        if method == "POST" and action == "confirm":
+            return confirm_upload(event, conn, user_id, role)
         if method == "POST":
             return upload_item(event, conn, user_id, role)
         if method == "DELETE":
@@ -123,7 +150,73 @@ def list_items(conn, user_id, role):
 
     cur.close()
     conn.close()
-    return resp(200, {"items": items})
+    direct = ext_storage_ready()
+    return resp(200, {"items": items, "direct_upload": direct,
+                      "max_mb": MAX_DIRECT_MB if direct else MAX_MB})
+
+
+def upload_url(event, conn, user_id, role):
+    """Выдать браузеру одноразовую ссылку для загрузки большого файла прямо в облако."""
+    if role != "teacher":
+        conn.close()
+        return resp(403, {"error": "Только преподаватель"})
+    if not ext_storage_ready():
+        conn.close()
+        return resp(400, {"error": "Облачное хранилище не подключено"})
+
+    body = json.loads(event.get("body") or "{}")
+    file_name = (body.get("file_name") or "file").strip()
+    mime = body.get("mime") or "application/octet-stream"
+    size = int(body.get("size") or 0)
+    if size > MAX_DIRECT_MB * 1024 * 1024:
+        conn.close()
+        return resp(400, {"error": f"Файл больше {MAX_DIRECT_MB} МБ"})
+
+    ext = file_name.rsplit(".", 1)[-1].lower() if "." in file_name else "bin"
+    key = f"library/{user_id}/{uuid.uuid4().hex}.{ext}"
+    put_url = ext_client().generate_presigned_url(
+        "put_object",
+        Params={"Bucket": os.environ["LIB_S3_BUCKET"], "Key": key, "ContentType": mime},
+        ExpiresIn=3600,
+    )
+    conn.close()
+    return resp(200, {"upload_url": put_url, "key": key, "file_url": ext_public_url(key)})
+
+
+def confirm_upload(event, conn, user_id, role):
+    """Создать карточку книги после успешной загрузки файла в облако."""
+    if role != "teacher":
+        conn.close()
+        return resp(403, {"error": "Только преподаватель"})
+    body = json.loads(event.get("body") or "{}")
+    title = (body.get("title") or "").strip()
+    key = (body.get("key") or "").strip()
+    if not title or not key:
+        conn.close()
+        return resp(400, {"error": "Укажите название и файл"})
+    if not key.startswith(f"library/{user_id}/"):
+        conn.close()
+        return resp(403, {"error": "Неверный файл"})
+
+    file_name = (body.get("file_name") or "file").strip()
+    mime = body.get("mime") or "application/octet-stream"
+    kind = "audio" if mime.startswith("audio/") else "book"
+    url = ext_public_url(key)
+
+    cur = conn.cursor()
+    cur.execute(
+        """INSERT INTO library_items
+           (teacher_id, title, author, description, kind, file_url, file_name, file_key,
+            mime, size_bytes, duration_sec, storage)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'external') RETURNING id""",
+        (user_id, title, (body.get("author") or "").strip(), (body.get("description") or "").strip(),
+         kind, url, file_name, key, mime, int(body.get("size") or 0), int(body.get("duration_sec") or 0))
+    )
+    item_id = cur.fetchone()[0]
+    conn.commit()
+    cur.close()
+    conn.close()
+    return resp(200, {"ok": True, "id": item_id, "file_url": url, "kind": kind})
 
 
 def upload_item(event, conn, user_id, role):
@@ -181,7 +274,8 @@ def delete_item(event, conn, user_id, role):
         return resp(400, {"error": "Укажите книгу"})
 
     cur = conn.cursor()
-    cur.execute("SELECT file_key FROM library_items WHERE id=%s AND teacher_id=%s", (item_id, user_id))
+    cur.execute("SELECT file_key, COALESCE(storage,'internal') FROM library_items WHERE id=%s AND teacher_id=%s",
+                (item_id, user_id))
     row = cur.fetchone()
     if not row:
         cur.close()
@@ -190,7 +284,10 @@ def delete_item(event, conn, user_id, role):
 
     if row[0]:
         try:
-            s3_client().delete_object(Bucket="files", Key=row[0])
+            if row[1] == "external" and ext_storage_ready():
+                ext_client().delete_object(Bucket=os.environ["LIB_S3_BUCKET"], Key=row[0])
+            else:
+                s3_client().delete_object(Bucket="files", Key=row[0])
         except Exception:
             pass
 
