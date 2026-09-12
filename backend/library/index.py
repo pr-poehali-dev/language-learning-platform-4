@@ -109,6 +109,21 @@ def handler(event: dict, context) -> dict:
             return list_items(conn, user_id, role)
         if method == "POST" and action == "assign":
             return assign_item(event, conn, user_id, role)
+        if method == "POST" and action == "setup_cors":
+            conn.close()
+            if role != "teacher":
+                return resp(403, {"error": "Только преподаватель"})
+            ext_client().put_bucket_cors(
+                Bucket=os.environ["LIB_S3_BUCKET"],
+                CORSConfiguration={"CORSRules": [{
+                    "AllowedHeaders": ["*"],
+                    "AllowedMethods": ["GET", "PUT", "HEAD"],
+                    "AllowedOrigins": ["*"],
+                    "ExposeHeaders": ["ETag"],
+                    "MaxAgeSeconds": 3600,
+                }]},
+            )
+            return resp(200, {"ok": True})
         if method == "POST" and action == "upload_url":
             return upload_url(event, conn, user_id, role)
         if method == "POST" and action == "confirm":
