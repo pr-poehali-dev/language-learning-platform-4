@@ -54,6 +54,7 @@ def ext_client():
         endpoint_url=os.environ["LIB_S3_ENDPOINT"],
         aws_access_key_id=os.environ["LIB_S3_KEY_ID"],
         aws_secret_access_key=os.environ["LIB_S3_SECRET_KEY"],
+        region_name=os.environ.get("LIB_S3_REGION", "ru-central1"),
         config=Config(signature_version="s3v4"),
     )
 
